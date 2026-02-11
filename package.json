@@ -1,5 +1,5 @@
 {
-  "name": "voidchat-root",
+  "name": "nullchat-root",
   "private": true,
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

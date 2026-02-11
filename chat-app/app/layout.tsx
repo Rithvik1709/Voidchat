@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-    title: "Voidchat",
+    title: "Nullchat",
     description: "Anonymous local group chat",
 };
 

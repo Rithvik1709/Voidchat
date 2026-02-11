@@ -62,7 +62,7 @@ export default function GroupList() {
                 <header className="flex flex-row justify-between items-center gap-4 border-b border-border/40 pb-6 sm:pb-8">
                     <div className="space-y-2 sm:space-y-4">
                         <h1 className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-foreground flex items-center gap-3">
-                            Voidchat
+                            Nullchat
                             <Zap className="w-8 h-8 text-foreground fill-current" />
                         </h1>
                     </div>

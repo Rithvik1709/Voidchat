@@ -15,7 +15,7 @@ export default function Preloader() {
         { text: "Yap.", sub: "Just talk" },
         { text: "Discuss.", sub: "Deep dives" },
         { text: "Stay Anonymous.", sub: "No traces" },
-        { text: "Voidchat.", sub: "Welcome" }
+        { text: "Nullchat.", sub: "Welcome" }
     ];
 
     useEffect(() => {
