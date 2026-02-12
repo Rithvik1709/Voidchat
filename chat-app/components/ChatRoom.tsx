@@ -29,10 +29,10 @@ interface Message {
     content: MessageContent;
     timestamp: string;
     isSystem?: boolean;
-    encryptedPayload?: string; // Add this for internal use before decryption
+    encryptedPayload?: string; 
 }
 
-// Avatar color generator based on username
+
 const getAvatarColor = (name: string) => {
     const colors = [
         'bg-red-500', 'bg-orange-500', 'bg-amber-500', 'bg-yellow-500',
@@ -82,12 +82,11 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
         }
     };
 
-    // Warn on browser refresh/close
     useEffect(() => {
         const handleBeforeUnload = (e: BeforeUnloadEvent) => {
             if (isJoined) {
                 e.preventDefault();
-                e.returnValue = ''; // Trigger browser confirmation dialog
+                e.returnValue = ''; 
             }
         };
 
@@ -95,7 +94,6 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
         return () => window.removeEventListener('beforeunload', handleBeforeUnload);
     }, [isJoined]);
 
-    // Auto-focus input when applying a reply
     useEffect(() => {
         if (replyingTo) {
             inputRef.current?.focus();
@@ -123,7 +121,6 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
             }
         };
 
-        // emoji picker click outside handler
         const handleClickOutside = (event: MouseEvent) => {
             if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
                 setIsEmojiPickerOpen(false);
@@ -134,8 +131,6 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
         init();
     }, []);
 
-    // Supabase Realtime Logic
-    // Supabase Realtime Logic
     useEffect(() => {
         if (!key) return;
 
@@ -151,13 +146,6 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
 
         const handleMessage = async (payload: any) => {
             try {
-                // If message is from us, we already displayed it? No, wait for broadcast to be consistent?
-                // Actually broadcast sends to everyone including sender usually? No, depends on config. 
-                // By default broadcast does NOT send back to self unless requested.
-                // We'll optimistically update valid msgs or verify. 
-                // Current code: socket.io broadcasted to everyone in room including sender? io.to(groupId) does.
-                // Supabase broadcast usually excludes sender by default unless 'broadcast' config says otherwise.
-                // We'll check. If not, sender needs to append manually.
 
                 const decryptedString = await decryptMessage(payload.encryptedPayload, key);
                 let content: MessageContent;
@@ -170,7 +158,6 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                 }
 
                 setMessages(prev => {
-                    // Avoid duplicates if we handled self-message separately
                     if (prev.some(m => m.id === payload.id)) return prev;
                     return [...prev, { ...payload, content }];
                 });
@@ -188,8 +175,6 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
             .on('presence', { event: 'sync' }, () => {
                 const newState = channel.presenceState();
                 const users = Object.keys(newState).filter(k => k && k !== 'undefined');
-                // Also get the raw presence data to extract usernames if keys are unique IDs
-                // In our config: key: username. So keys are usernames.
                 setParticipants(users);
                 setUserCount(users.length);
             })
@@ -222,14 +207,12 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
         let heartbeatInterval: NodeJS.Timeout;
 
         if (isJoined && username) {
-            // 1. Notify server we joined (Increment Count)
             fetch(`/api/groups/${groupId}/membership`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'join' })
             }).catch(e => console.error('Join failed', e));
 
-            // Start Heartbeat
             heartbeatInterval = setInterval(async () => {
                 try {
                     await fetch('/api/groups/heartbeat', {
@@ -240,9 +223,8 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                 } catch (e) {
                     console.error('Heartbeat failed', e);
                 }
-            }, 60000); // Ping every 1 minute
+            }, 60000); 
 
-            // Initial ping
             fetch('/api/groups/heartbeat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -256,8 +238,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
             channelRef.current = null;
 
             if (isJoined) {
-                // 3. Notify server we left (Decrement/Delete)
-                // Use sendBeacon for reliability on unload
+
                 const data = JSON.stringify({ action: 'leave' });
                 if (navigator.sendBeacon) {
                     const blob = new Blob([data], { type: 'application/json' });
@@ -266,7 +247,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                     fetch(`/api/groups/${groupId}/membership`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        keepalive: true, // Critical for unload
+                        keepalive: true, 
                         body: data
                     }).catch(e => console.error('Leave failed', e));
                 }
@@ -283,10 +264,9 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
         const trimmedName = username.trim();
         if (!trimmedName) return;
 
-        // Check if username is taken
         if (participants.some(p => p.toLowerCase() === trimmedName.toLowerCase())) {
             setJoinError(`Username "${trimmedName}" is already taken.`);
-            setTimeout(() => setJoinError(''), 3000); // Clear error after 3s
+            setTimeout(() => setJoinError(''), 3000);  
             return;
         }
 
@@ -331,7 +311,6 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
     const sendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        // Block submit if selecting mention
         if (showMentions && filteredParticipants.length > 0) return;
 
         if (!input.trim() || !key) return;
@@ -356,14 +335,11 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                 encryptedPayload: encryptedPayload
             };
 
-            // Send to others
             await supabase.channel(`room:${groupId}`).send({
                 type: 'broadcast',
                 event: 'message',
                 payload: messageData
             });
-
-            // Add to own list immediately
             setMessages(prev => [...prev, { ...messageData, content }]);
 
             setInput('');
@@ -431,8 +407,6 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
         );
     }
 
-    // Mention Filtering Logic
-    // Mention Filtering Logic
     const mentionMatch = input.match(/@(\w*)$/);
     const hasPreviousMention = input.replace(/@(\w*)$/, '').includes('@');
     const showMentions = mentionMatch && !hasPreviousMention ? true : false;
@@ -446,7 +420,6 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
         setSelectedIndex(0);
     };
 
-    // Keyboard Navigation Handler
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (showMentions && filteredParticipants.length > 0) {
             if (e.key === 'ArrowUp') {
@@ -541,14 +514,10 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
 
                             const isMe = msg.sender === username;
                             const prevMsg = messages[index - 1];
-
-                            // Grouping Logic: Same sender && Same Minute
                             const prevTimeString = prevMsg ? new Date(prevMsg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
                             const currTimeString = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                             const isSameSender = prevMsg && prevMsg.sender === msg.sender;
                             const isSameTime = prevTimeString === currTimeString;
-
-                            // Show Header if: NOT same sender OR NOT same minute OR previous was system
                             const showHeader = !isSameSender || !isSameTime || prevMsg.isSystem;
 
                             return (
@@ -560,7 +529,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                     className={cn(
                                         "group flex w-full relative items-center",
                                         isMe ? "flex-row-reverse" : "flex-row",
-                                        showHeader ? "mt-6" : "mt-1" // Extra margin for new groups
+                                        showHeader ? "mt-6" : "mt-1"
                                     )}
                                 >
                                     {/* Swipe Action Background (Reply Icon) */}
@@ -585,14 +554,14 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                             "flex gap-3 w-full relative z-10",
                                             isMe ? "flex-row-reverse" : "flex-row"
                                         )}
-                                        style={{ x: 0 }} // Reset position after drag
-                                        whileDrag={{ x: 50 }} // Visual feedback during drag
+                                        style={{ x: 0 }} 
+                                        whileDrag={{ x: 50 }} 
                                     >
                                         {/* Avatar: Show only if it's the TOP message of the group (showHeader) */}
                                         <div className={cn(
                                             "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white text-xs font-bold shadow-sm select-none transition-opacity",
                                             getAvatarColor(msg.sender),
-                                            showHeader ? "opacity-100" : "opacity-0 invisible" // Invisible to keep spacing
+                                            showHeader ? "opacity-100" : "opacity-0 invisible" 
                                         )}>
                                             {msg.sender[0].toUpperCase()}
                                         </div>
@@ -715,7 +684,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                 value={input}
                                 onChange={e => {
                                     setInput(e.target.value);
-                                    setSelectedIndex(0); // Reset selection on type
+                                    setSelectedIndex(0); 
                                 }}
                                 onKeyDown={handleKeyDown}
                                 placeholder={replyingTo ? "Type your reply..." : "Type a message..."}
