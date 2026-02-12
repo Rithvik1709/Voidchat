@@ -56,7 +56,7 @@ export default function GroupList() {
     }, []);
 
     return (
-        <div className="min-h-screen bg-background relative overflow-hidden animate-in fade-in duration-700">
+        <div className="h-full min-h-0 bg-background relative overflow-hidden animate-in fade-in duration-700">
             <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-12 space-y-8 sm:space-y-12 relative z-10">
                 {/* Header */}
                 <header className="flex flex-row justify-between items-center gap-4 border-b border-border/40 pb-6 sm:pb-8">
@@ -68,8 +68,10 @@ export default function GroupList() {
                     </div>
 
                     <div className="flex items-center gap-3 sm:gap-4 md:w-auto">
+                        <Button asChild variant="secondary" className="rounded-full px-4 h-9 text-xs sm:text-sm border border-border">
+                            <Link href="/about">About</Link>
+                        </Button>
                         <ModeToggle />
-
                     </div>
                 </header>
 
