@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { importKey, encryptMessage, decryptMessage } from '@/lib/crypto';
 import { Button, Input, Card } from './ui/basic';
-import { Send, ArrowLeft, Reply, X, Users, Plus, Smile, Share2 } from 'lucide-react';
+import { Send, ArrowLeft, Reply, X, Users, Plus, Smile, Share2, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, PanInfo } from "framer-motion";
 import ModeToggle from "./ModeToggle";
@@ -18,9 +18,18 @@ interface ReplyContext {
     text: string;
 }
 
+interface PollData {
+    question: string;
+    options: string[];
+    votes: { [option: string]: string[] }; // option -> array of usernames who voted
+    creator: string;
+    type: 'single' | 'multiple'; // single or multiple choice
+}
+
 interface MessageContent {
     text: string;
     replyTo?: ReplyContext;
+    poll?: PollData;
 }
 
 interface Message {
@@ -63,6 +72,12 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
     const [shareCopied, setShareCopied] = useState(false);
+    const [showPlusMenu, setShowPlusMenu] = useState(false);
+    const [showPollModal, setShowPollModal] = useState(false);
+    const [pollQuestion, setPollQuestion] = useState('');
+    const [pollOptions, setPollOptions] = useState(['', '']);
+    const [pollType, setPollType] = useState<'single' | 'multiple'>('single');
+    const plusMenuRef = useRef<HTMLDivElement>(null);
 
     const emojiPickerRef = useRef<HTMLDivElement>(null)
     const channelRef = useRef<RealtimeChannel | null>(null);
@@ -125,6 +140,9 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
             if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
                 setIsEmojiPickerOpen(false);
             }
+            if (plusMenuRef.current && !plusMenuRef.current.contains(event.target as Node)) {
+                setShowPlusMenu(false);
+            }
         };
         
         document.addEventListener('mousedown', handleClickOutside);
@@ -166,8 +184,22 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
             }
         };
 
+        const handleVote = async (payload: any) => {
+            try {
+                const decryptedString = await decryptMessage(payload.encryptedPayload, key);
+                const content: MessageContent = JSON.parse(decryptedString);
+                
+                setMessages(prev => prev.map(m => 
+                    m.id === payload.messageId ? { ...m, content } : m
+                ));
+            } catch (err) {
+                console.error('Vote decrypt failed', err);
+            }
+        };
+
         channel
             .on('broadcast', { event: 'message' }, ({ payload }) => handleMessage(payload))
+            .on('broadcast', { event: 'vote' }, ({ payload }) => handleVote(payload))
             .on('broadcast', { event: 'clear' }, () => {
                 setMessages([]);
                 setReplyingTo(null);
@@ -603,13 +635,119 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                                         </div>
                                                     )}
 
-                                                    {msg.content.text.split(new RegExp(`(@${username}\\b)`, 'gi')).map((part, i) =>
-                                                        part.toLowerCase() === `@${username}`.toLowerCase() ? (
-                                                            <span key={i} className="bg-primary/20 text-primary font-bold px-1 rounded mx-0.5 border border-primary/30 shadow-[0_0_10px_rgba(var(--primary),0.2)] animate-pulse">
-                                                                {part}
-                                                            </span>
-                                                        ) : (
-                                                            <span key={i}>{part}</span>
+                                                    {msg.content.poll ? (
+                                                        // Interactive Poll Display
+                                                        <div className="space-y-3">
+                                                            <div className="font-semibold text-base mb-2">
+                                                                {msg.content.poll.question}
+                                                            </div>
+                                                            <div className="text-xs opacity-70 mb-3 flex items-center gap-2">
+                                                                <span>{msg.content.poll.type === 'single' ? 'Single Choice' : 'Multiple Choice'}</span>
+                                                                <span>•</span>
+                                                                <span>by {msg.content.poll.creator}</span>
+                                                            </div>
+                                                            <div className="space-y-2">
+                                                                {msg.content.poll.options.map((option, idx) => {
+                                                                    const voteCount = msg.content.poll!.votes[option]?.length || 0;
+                                                                    const hasVoted = msg.content.poll!.votes[option]?.includes(username);
+                                                                    const totalVotes = Object.values(msg.content.poll!.votes).reduce((sum, voters) => sum + voters.length, 0);
+                                                                    const percentage = totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
+                                                                    
+                                                                    return (
+                                                                        <button
+                                                                            key={idx}
+                                                                            onClick={async () => {
+                                                                                const poll = msg.content.poll!;
+                                                                                const newVotes = { ...poll.votes };
+                                                                                
+                                                                                // If single choice, remove vote from all other options
+                                                                                if (poll.type === 'single') {
+                                                                                    Object.keys(newVotes).forEach(opt => {
+                                                                                        newVotes[opt] = newVotes[opt].filter(u => u !== username);
+                                                                                    });
+                                                                                }
+                                                                                
+                                                                                // Toggle vote for this option
+                                                                                if (hasVoted) {
+                                                                                    newVotes[option] = newVotes[option].filter(u => u !== username);
+                                                                                } else {
+                                                                                    newVotes[option] = [...(newVotes[option] || []), username];
+                                                                                }
+                                                                                
+                                                                                const updatedPoll: PollData = {
+                                                                                    ...poll,
+                                                                                    votes: newVotes
+                                                                                };
+                                                                                
+                                                                                // Broadcast the updated poll
+                                                                                try {
+                                                                                    const content: MessageContent = {
+                                                                                        text: msg.content.text,
+                                                                                        poll: updatedPoll
+                                                                                    };
+                                                                                    const payloadString = JSON.stringify(content);
+                                                                                    const encryptedPayload = await encryptMessage(payloadString, key!);
+                                                                                    
+                                                                                    await supabase.channel(`room:${groupId}`).send({
+                                                                                        type: 'broadcast',
+                                                                                        event: 'vote',
+                                                                                        payload: {
+                                                                                            messageId: msg.id,
+                                                                                            encryptedPayload: encryptedPayload
+                                                                                        }
+                                                                                    });
+                                                                                    
+                                                                                    // Update local state
+                                                                                    setMessages(prev => prev.map(m => 
+                                                                                        m.id === msg.id ? { ...m, content } : m
+                                                                                    ));
+                                                                                } catch (err) {
+                                                                                    console.error('Vote error:', err);
+                                                                                }
+                                                                            }}
+                                                                            className={cn(
+                                                                                "w-full text-left p-3 rounded-lg border transition-all relative overflow-hidden",
+                                                                                hasVoted 
+                                                                                    ? "border-primary bg-primary/10 font-medium" 
+                                                                                    : "border-border hover:border-primary/50 hover:bg-accent/50",
+                                                                                isMe ? "text-primary-foreground" : "text-foreground"
+                                                                            )}
+                                                                        >
+                                                                            {/* Vote percentage bar */}
+                                                                            <div 
+                                                                                className="absolute inset-0 bg-primary/5 transition-all duration-300"
+                                                                                style={{ width: `${percentage}%` }}
+                                                                            />
+                                                                            
+                                                                            <div className="relative flex items-center justify-between gap-2">
+                                                                                <div className="flex items-center gap-2 flex-1">
+                                                                                    <span className={cn(
+                                                                                        "w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0",
+                                                                                        hasVoted ? "border-primary bg-primary" : "border-current"
+                                                                                    )}>
+                                                                                        {hasVoted && <span className="w-2 h-2 bg-primary-foreground rounded-full" />}
+                                                                                    </span>
+                                                                                    <span className="text-sm">{option}</span>
+                                                                                </div>
+                                                                                <span className="text-xs opacity-70 font-medium">
+                                                                                    {voteCount} {voteCount === 1 ? 'vote' : 'votes'} ({percentage}%)
+                                                                                </span>
+                                                                            </div>
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        // Regular text message
+                                                        msg.content.text.split(new RegExp(`(@${username}\\b)`, 'gi')).map((part, i) =>
+                                                            part.toLowerCase() === `@${username}`.toLowerCase() ? (
+                                                                <span key={i} className="bg-primary/20 text-primary font-bold px-1 rounded mx-0.5 border border-primary/30 shadow-[0_0_10px_rgba(var(--primary),0.2)] animate-pulse">
+                                                                    {part}
+                                                                </span>
+                                                            ) : (
+                                                                <span key={i}>{part}</span>
+                                                            )
                                                         )
                                                     )}
                                                 </div>
@@ -670,6 +808,24 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                         )}
 
                         <form onSubmit={sendMessage} className="flex gap-2">
+                            <div className='relative flex justify-center items-center rounded-full shrink-0 h-11 w-11 shadow-md bg-secondary hover:bg-accent transition-all cursor-pointer' ref={plusMenuRef}>
+                                <Plus className="h-5 w-5" onClick={() => setShowPlusMenu(!showPlusMenu)} />
+                                {showPlusMenu && (
+                                    <div className="absolute bottom-full left-0 mb-2 z-50 bg-popover/95 backdrop-blur border shadow-2xl rounded-xl p-2 w-40 animate-in slide-in-from-bottom-2 fade-in duration-200">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setShowPollModal(true);
+                                                setShowPlusMenu(false);
+                                            }}
+                                            className="flex items-center gap-2 w-full text-sm p-2 rounded-lg hover:bg-primary/10 text-foreground transition-colors"
+                                        >
+                                            <BarChart3 className="h-4 w-4" />
+                                            <span>Create Poll</span>
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                             <div className='relative flex justify-center items-center rounded-full shrink-0 h-11 w-11 shadow-md bg-secondary hover:bg-accent transition-all'>
                                 <div ref={emojiPickerRef}>
                                     {isEmojiPickerOpen && <EmojiPickerPopover onSelect={(emoji) => {
@@ -757,6 +913,162 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                         </div>
                     </div>
                 </div>
+
+                {/* Poll Creation Modal */}
+                {showPollModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                        <Card className="w-full max-w-md relative overflow-hidden rounded-[2rem] bg-card border border-border shadow-2xl animate-in zoom-in-95 duration-300 p-6">
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-xl font-bold tracking-tight text-foreground">Create Poll</h3>
+                                    <Button variant="ghost" size="icon" onClick={() => {
+                                        setShowPollModal(false);
+                                        setPollQuestion('');
+                                        setPollOptions(['', '']);
+                                        setPollType('single');
+                                    }} className="h-8 w-8 rounded-full">
+                                        <X className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="text-sm font-medium text-foreground mb-1 block">Poll Type</label>
+                                        <div className="flex gap-2">
+                                            <Button
+                                                type="button"
+                                                variant={pollType === 'single' ? 'default' : 'outline'}
+                                                size="sm"
+                                                onClick={() => setPollType('single')}
+                                                className="flex-1 rounded-full"
+                                            >
+                                                Single Choice
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                variant={pollType === 'multiple' ? 'default' : 'outline'}
+                                                size="sm"
+                                                onClick={() => setPollType('multiple')}
+                                                className="flex-1 rounded-full"
+                                            >
+                                                Multiple Choice
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-sm font-medium text-foreground mb-1 block">Question</label>
+                                        <Input
+                                            value={pollQuestion}
+                                            onChange={(e) => setPollQuestion(e.target.value)}
+                                            placeholder="Ask a question..."
+                                            className="rounded-lg"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-sm font-medium text-foreground mb-1 block">Options</label>
+                                        {pollOptions.map((option, i) => (
+                                            <div key={i} className="flex gap-2 mb-2">
+                                                <Input
+                                                    value={option}
+                                                    onChange={(e) => {
+                                                        const newOptions = [...pollOptions];
+                                                        newOptions[i] = e.target.value;
+                                                        setPollOptions(newOptions);
+                                                    }}
+                                                    placeholder={`Option ${i + 1}`}
+                                                    className="rounded-lg"
+                                                />
+                                                {pollOptions.length > 2 && (
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        onClick={() => setPollOptions(pollOptions.filter((_, idx) => idx !== i))}
+                                                        className="shrink-0"
+                                                    >
+                                                        <X className="h-4 w-4" />
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        ))}
+                                        {pollOptions.length < 5 && (
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => setPollOptions([...pollOptions, ''])}
+                                                className="rounded-full mt-1"
+                                            >
+                                                <Plus className="h-4 w-4 mr-1" />
+                                                Add Option
+                                            </Button>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="flex gap-3 pt-2">
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => {
+                                            setShowPollModal(false);
+                                            setPollQuestion('');
+                                            setPollOptions(['', '']);
+                                            setPollType('single');
+                                        }}
+                                        className="flex-1 rounded-full h-11 border-border hover:bg-muted"
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button
+                                        onClick={async () => {
+                                            if (!pollQuestion.trim() || pollOptions.filter(o => o.trim()).length < 2) {
+                                                return;
+                                            }
+                                            const filteredOptions = pollOptions.filter(o => o.trim());
+                                            const pollData: PollData = {
+                                                question: pollQuestion.trim(),
+                                                options: filteredOptions,
+                                                votes: Object.fromEntries(filteredOptions.map(o => [o, []])),
+                                                creator: username,
+                                                type: pollType
+                                            };
+                                            
+                                            try {
+                                                const content: MessageContent = {
+                                                    text: `📊 Poll: ${pollData.question}`,
+                                                    poll: pollData
+                                                };
+                                                const payloadString = JSON.stringify(content);
+                                                const encryptedPayload = await encryptMessage(payloadString, key!);
+                                                const messageData = {
+                                                    id: Date.now().toString(),
+                                                    sender: username,
+                                                    timestamp: new Date().toISOString(),
+                                                    encryptedPayload: encryptedPayload
+                                                };
+                                                await supabase.channel(`room:${groupId}`).send({
+                                                    type: 'broadcast',
+                                                    event: 'message',
+                                                    payload: messageData
+                                                });
+                                                setMessages(prev => [...prev, { ...messageData, content }]);
+                                            } catch (err) {
+                                                console.error(err);
+                                            }
+                                            
+                                            setShowPollModal(false);
+                                            setPollQuestion('');
+                                            setPollOptions(['', '']);
+                                            setPollType('single');
+                                        }}
+                                        disabled={!pollQuestion.trim() || pollOptions.filter(o => o.trim()).length < 2}
+                                        className="flex-1 rounded-full h-11 shadow-lg"
+                                    >
+                                        Create Poll
+                                    </Button>
+                                </div>
+                            </div>
+                        </Card>
+                    </div>
+                )}
 
                 {/* Leave Confirmation Dialog */}
                 {showLeaveConfirm && (
