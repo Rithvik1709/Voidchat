@@ -19,10 +19,23 @@ export default function GroupList() {
     const [groups, setGroups] = useState<Group[]>([]);
     const [loading, setLoading] = useState(true);
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [creatorId, setCreatorId] = useState<string>('');
+
+    useEffect(() => {
+        // Get or create creator ID from localStorage
+        let id = localStorage.getItem('creator_id');
+        if (!id) {
+            id = crypto.randomUUID();
+            localStorage.setItem('creator_id', id);
+        }
+        setCreatorId(id);
+    }, []);
 
     const fetchGroups = async () => {
+        if (!creatorId) return;
+        
         try {
-            const res = await fetch('/api/groups');
+            const res = await fetch(`/api/groups?creator_id=${encodeURIComponent(creatorId)}`);
             if (res.ok) {
                 const data = await res.json();
                 setGroups(data);
@@ -43,6 +56,8 @@ export default function GroupList() {
     };
 
     useEffect(() => {
+        if (!creatorId) return;
+        
         fetchGroups();
         cleanupEmptyGroups();
 
@@ -53,7 +68,7 @@ export default function GroupList() {
             clearInterval(fetchInterval);
             clearInterval(cleanupInterval);
         };
-    }, []);
+    }, [creatorId]);
 
     return (
         <div className="h-full min-h-0 bg-background relative overflow-hidden animate-in fade-in duration-700">
@@ -88,9 +103,9 @@ export default function GroupList() {
                             <MessageSquarePlus className="h-10 w-10 sm:h-12 sm:w-12 text-foreground" />
                         </div>
                         <div className="space-y-2">
-                            <h3 className="text-xl sm:text-2xl font-bold text-foreground">It&apos;s quiet here...</h3>
+                            <h3 className="text-xl sm:text-2xl font-bold text-foreground">No groups yet</h3>
                             <p className="text-sm sm:text-base text-muted-foreground max-w-sm mx-auto">
-                                Be the first to start a conversation. Create a group and share the invite.
+                                Create a private group and share the link with friends. Only those with the link can join.
                             </p>
                         </div>
                         <Button
@@ -164,7 +179,7 @@ export default function GroupList() {
                 <Plus className="h-6 w-6 sm:h-8 sm:w-8" />
             </Button>
 
-            {showCreateModal && <CreateGroupModal onClose={() => setShowCreateModal(false)} />}
+            {showCreateModal && <CreateGroupModal onClose={() => setShowCreateModal(false)} creatorId={creatorId} onSuccess={() => { setShowCreateModal(false); fetchGroups(); }} />}
         </div>
     );
 }
