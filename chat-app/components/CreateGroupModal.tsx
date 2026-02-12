@@ -6,7 +6,7 @@ import { Button, Input, Card, CardHeader, CardTitle, CardContent } from './ui/ba
 import { generateKey, exportKey } from '@/lib/crypto';
 import { Loader2, Plus, X, Sparkles } from 'lucide-react';
 
-export default function CreateGroupModal({ onClose }: { onClose: () => void }) {
+export default function CreateGroupModal({ onClose, creatorId, onSuccess }: { onClose: () => void; creatorId: string; onSuccess?: () => void }) {
     const [name, setName] = useState('');
     const [tags, setTags] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -29,7 +29,8 @@ export default function CreateGroupModal({ onClose }: { onClose: () => void }) {
                 body: JSON.stringify({
                     name: name.trim(),
                     tags: tags.split(',').map(t => t.trim()).filter(Boolean),
-                    key: exportedKey
+                    key: exportedKey,
+                    creator_id: creatorId
                 })
             });
 
