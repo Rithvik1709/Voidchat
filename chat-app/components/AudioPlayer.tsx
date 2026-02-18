@@ -87,12 +87,23 @@ export default function AudioPlayer({ audioData, sender, timestamp, isOwn }: Aud
 
     const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
+    if (!audioUrl) {
+        return (
+            <div className={cn(
+                "flex items-center space-x-3 p-3 rounded-lg max-w-xs",
+                isOwn ? "bg-primary text-primary-foreground" : "bg-muted"
+            )}>
+                <div className="text-sm">Loading audio...</div>
+            </div>
+        );
+    }
+
     return (
         <div className={cn(
             "flex items-center space-x-3 p-3 rounded-lg max-w-xs",
             isOwn ? "bg-primary text-primary-foreground" : "bg-muted"
         )}>
-            <audio ref={audioRef} src={audioUrl || undefined} preload="metadata" />
+            <audio ref={audioRef} src={audioUrl} preload="metadata" />
             
             {/* Play/Pause Button */}
             <Button
