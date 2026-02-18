@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { importKey, encryptMessage, decryptMessage } from '@/lib/crypto';
 import { Button, Input, Card } from './ui/basic';
-import { Send, ArrowLeft, Reply, X, Users, Plus, Smile, Share2, BarChart3 } from 'lucide-react';
+import { Send, ArrowLeft, Reply, X, Users, Plus, Smile, Share2, BarChart3, Mic } from 'lucide-react';
+import AudioRecorder from './AudioRecorder';
+import AudioPlayer from './AudioPlayer';
 import { cn } from '@/lib/utils';
 import { motion, PanInfo } from "framer-motion";
 import ModeToggle from "./ModeToggle";
@@ -30,6 +32,7 @@ interface MessageContent {
     text: string;
     replyTo?: ReplyContext;
     poll?: PollData;
+    audio?: string; // base64 encoded audio data
 }
 
 interface Message {
@@ -77,6 +80,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
     const [pollQuestion, setPollQuestion] = useState('');
     const [pollOptions, setPollOptions] = useState(['', '']);
     const [pollType, setPollType] = useState<'single' | 'multiple'>('single');
+    const [showAudioRecorder, setShowAudioRecorder] = useState(false);
     const plusMenuRef = useRef<HTMLDivElement>(null);
 
     const emojiPickerRef = useRef<HTMLDivElement>(null)
@@ -378,6 +382,46 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
             setReplyingTo(null);
         } catch (err) {
             console.error(err);
+        }
+    };
+
+    const sendAudioMessage = async (audioBlob: Blob) => {
+        if (!key) return;
+
+        try {
+            // Convert blob to base64
+            const reader = new FileReader();
+            reader.readAsDataURL(audioBlob);
+            reader.onloadend = async () => {
+                const base64Audio = reader.result as string;
+                // Remove data URL prefix
+                const base64Data = base64Audio.split(',')[1];
+
+                const content: MessageContent = {
+                    text: '🎤 Voice message',
+                    audio: base64Data
+                };
+
+                const payloadString = JSON.stringify(content);
+                const encryptedPayload = await encryptMessage(payloadString, key);
+
+                const messageData = {
+                    id: Date.now().toString(),
+                    sender: username,
+                    timestamp: new Date().toISOString(),
+                    encryptedPayload: encryptedPayload
+                };
+
+                await supabase.channel(`room:${groupId}`).send({
+                    type: 'broadcast',
+                    event: 'message',
+                    payload: messageData
+                });
+                setMessages(prev => [...prev, { ...messageData, content }]);
+                setShowAudioRecorder(false);
+            };
+        } catch (err) {
+            console.error('Error sending audio:', err);
         }
     };
 
@@ -738,6 +782,14 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                                                 })}
                                                             </div>
                                                         </div>
+                                                    ) : msg.content.audio ? (
+                                                        // Audio message
+                                                        <AudioPlayer
+                                                            audioData={msg.content.audio}
+                                                            sender={msg.sender}
+                                                            timestamp={msg.timestamp}
+                                                            isOwn={isMe}
+                                                        />
                                                     ) : (
                                                         // Regular text message
                                                         msg.content.text.split(new RegExp(`(@${username}\\b)`, 'gi')).map((part, i) =>
@@ -826,6 +878,15 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                     </div>
                                 )}
                             </div>
+                            <Button
+                                type="button"
+                                size="icon"
+                                onClick={() => setShowAudioRecorder(true)}
+                                className="rounded-full shrink-0 h-11 w-11 shadow-md bg-secondary hover:bg-accent text-foreground transition-all"
+                                title="Send voice message"
+                            >
+                                <Mic className="h-5 w-5" />
+                            </Button>
                             <div className='relative flex justify-center items-center rounded-full shrink-0 h-11 w-11 shadow-md bg-secondary hover:bg-accent transition-all'>
                                 <div ref={emojiPickerRef}>
                                     {isEmojiPickerOpen && <EmojiPickerPopover onSelect={(emoji) => {
@@ -1148,6 +1209,15 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                     </div>
                 </div>
             </div>
+
+            {/* Audio Recorder Modal */}
+            {showAudioRecorder && (
+                <AudioRecorder
+                    onSend={sendAudioMessage}
+                    onCancel={() => setShowAudioRecorder(false)}
+                    username={username}
+                />
+            )}
         </div>
     );
 }
