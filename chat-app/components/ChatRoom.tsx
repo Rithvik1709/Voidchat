@@ -418,10 +418,14 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                     payload: messageData
                 });
                 setMessages(prev => [...prev, { ...messageData, content }]);
+                
+                // Clean up the UI
                 setShowAudioRecorder(false);
             };
         } catch (err) {
             console.error('Error sending audio:', err);
+            // Clean up even on error
+            setShowAudioRecorder(false);
         }
     };
 
