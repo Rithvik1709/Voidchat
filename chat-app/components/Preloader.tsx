@@ -60,6 +60,19 @@ export default function Preloader() {
         }
       `}</style>
 
+            {/* X Link */}
+            <a
+                href="https://x.com/BngRithvik"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="X profile"
+                className="absolute top-5 right-5 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-background/60 text-foreground backdrop-blur transition-colors hover:bg-foreground hover:text-background"
+            >
+                <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-current">
+                    <path d="M18.244 2H21l-6.59 7.533L22 22h-6.828l-5.35-6.98L3.78 22H1l7.07-8.084L2 2h6.828l4.79 6.232L18.244 2Zm-1.193 18h1.89L7.02 4h-2.03l12.061 16Z" />
+                </svg>
+            </a>
+
             {/* Main Content */}
             <div className="relative z-10 text-center px-6">
                 {/* Minimal Center Indicator */}
@@ -107,6 +120,9 @@ export default function Preloader() {
 
                     <p className="text-xs text-muted-foreground font-poppins">
                         Click anywhere to continue
+                    </p>
+                    <p className="text-[11px] text-muted-foreground/80 font-poppins">
+                        Built by rithvik
                     </p>
                 </div>
             </div>
