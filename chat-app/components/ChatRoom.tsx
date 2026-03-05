@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { importKey, encryptMessage, decryptMessage } from '@/lib/crypto';
 import { Button, Input, Card } from './ui/basic';
-import { Send, ArrowLeft, Reply, X, Users, Plus, Smile, Share2, BarChart3, Mic } from 'lucide-react';
+import { Send, ArrowLeft, Reply, X, Users, Plus, Smile, Share2, BarChart3, Mic, Image as ImageIcon } from 'lucide-react';
 import AudioRecorder from './AudioRecorder';
 import AudioPlayer from './AudioPlayer';
 import { cn } from '@/lib/utils';
@@ -33,6 +33,7 @@ interface MessageContent {
     replyTo?: ReplyContext;
     poll?: PollData;
     audio?: string; // base64 encoded audio data
+    image?: string; // URL to uploaded image
 }
 
 interface Message {
@@ -81,12 +82,15 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
     const [pollOptions, setPollOptions] = useState(['', '']);
     const [pollType, setPollType] = useState<'single' | 'multiple'>('single');
     const [showAudioRecorder, setShowAudioRecorder] = useState(false);
+    const [isUploadingImage, setIsUploadingImage] = useState(false);
+    const [imageError, setImageError] = useState('');
     const plusMenuRef = useRef<HTMLDivElement>(null);
 
     const emojiPickerRef = useRef<HTMLDivElement>(null)
     const channelRef = useRef<RealtimeChannel | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const imageInputRef = useRef<HTMLInputElement>(null);
     const router = useRouter();
 
     const confirmLeave = () => {
@@ -341,6 +345,83 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
             setTimeout(() => setShareCopied(false), 2000);
         } catch (err) {
             console.error('Copy failed', err);
+        }
+    };
+
+    const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // Validate file size
+        const MAX_SIZE = 25 * 1024 * 1024; // 25MB
+        if (file.size > MAX_SIZE) {
+            setImageError('File size must be less than 25MB');
+            setTimeout(() => setImageError(''), 3000);
+            return;
+        }
+
+        // Validate file type
+        const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
+        if (!validTypes.includes(file.type)) {
+            setImageError('Only image files are allowed');
+            setTimeout(() => setImageError(''), 3000);
+            return;
+        }
+
+        setIsUploadingImage(true);
+        setImageError('');
+
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('groupId', groupId);
+
+            const response = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Upload failed');
+            }
+
+            const data = await response.json();
+            
+            // Send image message
+            if (key) {
+                const content: MessageContent = {
+                    text: '🖼️ Image',
+                    image: data.url
+                };
+
+                const payloadString = JSON.stringify(content);
+                const encryptedPayload = await encryptMessage(payloadString, key);
+
+                const messageData = {
+                    id: Date.now().toString(),
+                    sender: username,
+                    timestamp: new Date().toISOString(),
+                    encryptedPayload: encryptedPayload
+                };
+
+                await supabase.channel(`room:${groupId}`).send({
+                    type: 'broadcast',
+                    event: 'message',
+                    payload: messageData
+                });
+                setMessages(prev => [...prev, { ...messageData, content }]);
+            }
+        } catch (err) {
+            console.error('Image upload error:', err);
+            setImageError(err instanceof Error ? err.message : 'Failed to upload image');
+            setTimeout(() => setImageError(''), 3000);
+        } finally {
+            setIsUploadingImage(false);
+            // Reset input
+            if (imageInputRef.current) {
+                imageInputRef.current.value = '';
+            }
         }
     };
 
@@ -794,6 +875,19 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                                             timestamp={msg.timestamp}
                                                             isOwn={isMe}
                                                         />
+                                                    ) : msg.content.image ? (
+                                                        // Image message
+                                                        <div className="flex flex-col gap-2">
+                                                            <img
+                                                                src={msg.content.image}
+                                                                alt="Shared image"
+                                                                className="max-w-xs max-h-96 rounded-lg shadow-md object-cover"
+                                                                loading="lazy"
+                                                            />
+                                                            {msg.content.text !== '🖼️ Image' && (
+                                                                <p className="text-sm opacity-80">{msg.content.text}</p>
+                                                            )}
+                                                        </div>
                                                     ) : (
                                                         // Regular text message
                                                         msg.content.text.split(new RegExp(`(@${username}\\b)`, 'gi')).map((part, i) =>
@@ -831,6 +925,12 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                 {/* Input Area */}
                 <div className="absolute bottom-0 left-0 right-0 p-4 border-t bg-background/95 backdrop-blur z-20">
                     <div className="max-w-2xl mx-auto space-y-2 relative">
+
+                        {imageError && (
+                            <div className="px-3 py-2 rounded-lg bg-destructive/10 border border-destructive/50 text-destructive text-sm animate-in slide-in-from-top-1">
+                                {imageError}
+                            </div>
+                        )}
 
                         {showMentions && filteredParticipants.length > 0 && (
                             <div className="absolute bottom-full left-0 mb-2 z-40 bg-popover/95 backdrop-blur border shadow-2xl rounded-xl p-2 w-48 animate-in slide-in-from-bottom-2 fade-in duration-200">
@@ -891,6 +991,23 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                             >
                                 <Mic className="h-5 w-5" />
                             </Button>
+                            <Button
+                                type="button"
+                                size="icon"
+                                onClick={() => imageInputRef.current?.click()}
+                                disabled={isUploadingImage}
+                                className="rounded-full shrink-0 h-11 w-11 shadow-md bg-secondary hover:bg-accent text-foreground transition-all disabled:opacity-50"
+                                title="Share image (max 25MB)"
+                            >
+                                <ImageIcon className="h-5 w-5" />
+                            </Button>
+                            <input
+                                ref={imageInputRef}
+                                type="file"
+                                accept="image/*"
+                                onChange={handleImageSelect}
+                                className="hidden"
+                            />
                             <div className='relative flex justify-center items-center rounded-full shrink-0 h-11 w-11 shadow-md bg-secondary hover:bg-accent transition-all'>
                                 <div ref={emojiPickerRef}>
                                     {isEmojiPickerOpen && <EmojiPickerPopover onSelect={(emoji) => {
