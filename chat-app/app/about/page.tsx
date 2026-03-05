@@ -32,8 +32,7 @@ export default function AboutPage() {
                         Conversations, without the footprint.
                     </h1>
                     <p className="text-base sm:text-lg text-muted-foreground max-w-2xl">
-                        Nullchat is built for fast, private group conversations. No accounts. No profiles. Just a room,
-                        a link, and a moment shared.
+                        Nullchat is built for fast, private group conversations with rich media support. Share images, voice messages, and polls instantly. No accounts. No profiles. Just a room, a link, and moments shared together.
                     </p>
                 </header>
 
@@ -47,7 +46,7 @@ export default function AboutPage() {
                     <Card className="group p-6 rounded-2xl border border-border bg-card/60 backdrop-blur transition-all duration-300 ease-out hover:-translate-y-1.5 hover:bg-white hover:border-white/60 hover:shadow-2xl">
                         <h2 className="text-lg font-semibold text-foreground transition-colors duration-300 group-hover:text-black">Ephemeral rooms</h2>
                         <p className="text-sm text-muted-foreground mt-2 transition-colors duration-300 group-hover:text-black/80">
-                            Rooms live for the moment. When the session ends, the slate is clean for everyone.
+                            Rooms live for the moment. When the session ends, the slate is clean for everyone—including all shared media.
                         </p>
                     </Card>
                     <Card className="group p-6 rounded-2xl border border-border bg-card/60 backdrop-blur transition-all duration-300 ease-out hover:-translate-y-1.5 hover:bg-white hover:border-white/60 hover:shadow-2xl">
@@ -60,6 +59,30 @@ export default function AboutPage() {
                         <h2 className="text-lg font-semibold text-foreground transition-colors duration-300 group-hover:text-black">Signal, not noise</h2>
                         <p className="text-sm text-muted-foreground mt-2 transition-colors duration-300 group-hover:text-black/80">
                             Clean UI and focused flow keep the chat calm and readable, even when the room is busy.
+                        </p>
+                    </Card>
+                    <Card className="group p-6 rounded-2xl border border-border bg-card/60 backdrop-blur transition-all duration-300 ease-out hover:-translate-y-1.5 hover:bg-white hover:border-white/60 hover:shadow-2xl">
+                        <h2 className="text-lg font-semibold text-foreground transition-colors duration-300 group-hover:text-black">📸 Share images & media</h2>
+                        <p className="text-sm text-muted-foreground mt-2 transition-colors duration-300 group-hover:text-black/80">
+                            Upload and share images up to 25MB. They're stored securely and automatically deleted when the room ends.
+                        </p>
+                    </Card>
+                    <Card className="group p-6 rounded-2xl border border-border bg-card/60 backdrop-blur transition-all duration-300 ease-out hover:-translate-y-1.5 hover:bg-white hover:border-white/60 hover:shadow-2xl">
+                        <h2 className="text-lg font-semibold text-foreground transition-colors duration-300 group-hover:text-black">🎤 Voice messages</h2>
+                        <p className="text-sm text-muted-foreground mt-2 transition-colors duration-300 group-hover:text-black/80">
+                            Send encrypted voice messages instantly. Record and share without leaving the chat.
+                        </p>
+                    </Card>
+                    <Card className="group p-6 rounded-2xl border border-border bg-card/60 backdrop-blur transition-all duration-300 ease-out hover:-translate-y-1.5 hover:bg-white hover:border-white/60 hover:shadow-2xl">
+                        <h2 className="text-lg font-semibold text-foreground transition-colors duration-300 group-hover:text-black">📊 Interactive polls</h2>
+                        <p className="text-sm text-muted-foreground mt-2 transition-colors duration-300 group-hover:text-black/80">
+                            Create single or multiple-choice polls. Gather opinions instantly and see real-time results.
+                        </p>
+                    </Card>
+                    <Card className="group p-6 rounded-2xl border border-border bg-card/60 backdrop-blur transition-all duration-300 ease-out hover:-translate-y-1.5 hover:bg-white hover:border-white/60 hover:shadow-2xl">
+                        <h2 className="text-lg font-semibold text-foreground transition-colors duration-300 group-hover:text-black">💬 Smart replies & mentions</h2>
+                        <p className="text-sm text-muted-foreground mt-2 transition-colors duration-300 group-hover:text-black/80">
+                            Reply to specific messages and mention users by name. Threads keep conversations organized.
                         </p>
                     </Card>
                 </section>
