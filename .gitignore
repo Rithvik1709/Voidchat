@@ -1,2 +1,6 @@
 # dependencies
 /node_modules
+
+# Image uploads (temporary files)
+public/uploads/*
+!public/uploads/.gitkeep
