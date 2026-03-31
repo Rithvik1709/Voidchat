@@ -444,24 +444,18 @@ export default function Home() {
             </p>
           </div>
           <div className="flex flex-wrap justify-center gap-4 text-xs font-light text-[#4f555c] dark:text-[#C4C7C8] sm:gap-8">
-            <a
+            <Link
               className="transition-all hover:underline decoration-black/30 dark:decoration-white/30"
-              href="#"
+              href="/privacy"
             >
               Privacy
-            </a>
-            <a
+            </Link>
+            <Link
               className="transition-all hover:underline decoration-black/30 dark:decoration-white/30"
-              href="#"
+              href="/terms"
             >
               Terms
-            </a>
-            <a
-              className="transition-all hover:underline decoration-black/30 dark:decoration-white/30"
-              href="#"
-            >
-              Github
-            </a>
+            </Link>
             <a
               className="transition-all hover:underline decoration-black/30 dark:decoration-white/30"
               href="#"
