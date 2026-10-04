@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { importKey, encryptMessage, decryptMessage } from '@/lib/crypto';
 import { Button, Input, Card } from './ui/basic';
-import { Send, ArrowLeft, Reply, X, Users, Plus, Smile, Share2, BarChart3, Mic, Image as ImageIcon } from 'lucide-react';
+import { Send, ArrowLeft, ArrowRight, Check, Lock, Reply, X, Users, Plus, Smile, Share2, BarChart3, Mic, Image as ImageIcon } from 'lucide-react';
 import AudioRecorder from './AudioRecorder';
 import AudioPlayer from './AudioPlayer';
 import { cn } from '@/lib/utils';
@@ -47,18 +47,25 @@ interface Message {
 
 
 const getAvatarColor = (name: string) => {
-    const colors = [
-        'bg-red-500', 'bg-orange-500', 'bg-amber-500', 'bg-yellow-500',
-        'bg-lime-500', 'bg-green-500', 'bg-emerald-500', 'bg-teal-500',
-        'bg-cyan-500', 'bg-sky-500', 'bg-blue-500', 'bg-indigo-500',
-        'bg-violet-500', 'bg-purple-500', 'bg-fuchsia-500', 'bg-pink-500', 'bg-rose-500'
+    const shades = [
+        'bg-neutral-950 text-white dark:bg-white dark:text-black',
+        'bg-neutral-700 text-white dark:bg-neutral-300 dark:text-black',
+        'bg-neutral-500 text-white dark:bg-neutral-400 dark:text-black',
+        'bg-neutral-300 text-black dark:bg-neutral-600 dark:text-white',
+        'bg-neutral-200 text-black ring-1 ring-border dark:bg-neutral-800 dark:text-white',
     ];
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
         hash = name.charCodeAt(i) + ((hash << 5) - hash);
     }
-    return colors[Math.abs(hash) % colors.length];
+    return shades[Math.abs(hash) % shades.length];
 };
+
+const GRID_BG = {
+    backgroundImage:
+        'linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)',
+    backgroundSize: '56px 56px',
+} as const;
 
 export default function ChatRoom({ groupId, groupName }: { groupId: string; groupName: string }) {
     const [messages, setMessages] = useState<Message[]>([]);
@@ -512,58 +519,78 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
 
     if (error) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen p-4 bg-background">
-                <Card className="p-8 text-center max-w-sm border-destructive/50">
-                    <h2 className="text-xl font-bold text-destructive mb-2">Access Denied</h2>
-                    <p className="mb-4 text-muted-foreground">{error}</p>
-                    <Button onClick={() => router.push('/groups')}>Return to Groups</Button>
-                </Card>
+            <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-background p-4 text-foreground">
+                <div className="pointer-events-none absolute inset-0 opacity-[0.05] dark:opacity-[0.07]" style={{ ...GRID_BG, maskImage: 'radial-gradient(ellipse at center, black 10%, transparent 70%)', WebkitMaskImage: 'radial-gradient(ellipse at center, black 10%, transparent 70%)' }} />
+                <div className="relative w-full max-w-sm rounded-3xl border border-border bg-card/70 p-8 text-center backdrop-blur">
+                    <div className="mx-auto mb-6 grid h-14 w-14 place-items-center rounded-2xl bg-foreground text-background">
+                        <Lock className="h-6 w-6" />
+                    </div>
+                    <h2 className="mb-2 text-2xl font-bold tracking-tighter">Access denied</h2>
+                    <p className="mb-8 text-sm leading-relaxed text-muted-foreground">{error}</p>
+                    <Button onClick={() => router.push('/groups')} className="h-11 w-full rounded-full bg-foreground font-bold text-background hover:bg-foreground/90">
+                        Return to Groups
+                    </Button>
+                </div>
             </div>
         );
     }
 
     if (!isJoined) {
         return (
-            <div className="flex items-center justify-center min-h-screen bg-background p-4 transition-colors animate-in fade-in zoom-in-95 duration-200">
-                <Card className="w-full max-w-sm p-8 space-y-8 shadow-2xl border-border">
-                    <div className="text-center space-y-2">
-                        <h1 className="text-3xl font-black tracking-tighter text-foreground">Join Chat</h1>
-                        <p className="text-muted-foreground text-sm">Choose a temporary identity</p>
-                    </div>
-                    <form onSubmit={handleJoin} className="space-y-4">
-                        <div className="relative">
-                            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                                <span className="text-muted-foreground text-xs">@</span>
+            <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4 text-foreground animate-in fade-in duration-500">
+                <div className="pointer-events-none absolute inset-0 opacity-[0.05] dark:opacity-[0.07]" style={{ ...GRID_BG, maskImage: 'radial-gradient(ellipse at center, black 10%, transparent 70%)', WebkitMaskImage: 'radial-gradient(ellipse at center, black 10%, transparent 70%)' }} />
+                <div className="absolute right-4 top-4 z-10"><ModeToggle /></div>
+
+                <div className="relative w-full max-w-sm">
+                    <div className="absolute -inset-6 -z-10 rounded-[2.5rem] bg-gradient-to-b from-foreground/10 to-transparent blur-2xl" />
+                    <div className="rounded-3xl border border-border bg-card/80 p-8 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.4)] backdrop-blur">
+                        <div className="mb-8 text-center">
+                            <div className="mx-auto mb-6 flex w-fit items-center gap-2 rounded-full border border-border px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                <Lock className="h-3 w-3" /> End-to-end encrypted
                             </div>
-                            <Input
-                                placeholder="Username"
-                                value={username}
-                                onChange={e => {
-                                    setUsername(e.target.value.replace(/\s/g, ''));
-                                    setJoinError('');
-                                }}
-                                autoFocus
-                                required
-                                maxLength={15}
-                                className={cn(
-                                    "pl-7 bg-secondary border-border focus-visible:ring-ring h-11",
-                                    joinError && "border-destructive focus-visible:ring-destructive"
-                                )}
-                            />
+                            <h1 className="text-4xl font-bold leading-[0.95] tracking-tighter">Join the room</h1>
+                            {groupName && (
+                                <p className="mt-3 truncate font-mono text-xs text-muted-foreground">{groupName}</p>
+                            )}
+                            <p className="mt-3 text-sm text-muted-foreground">Pick a temporary name. It disappears when you leave.</p>
                         </div>
-                        {joinError && (
-                            <p className="text-xs text-destructive font-medium animate-in slide-in-from-top-1">
-                                {joinError}
-                            </p>
-                        )}
-                        <Button type="submit" className="w-full font-bold shadow-lg" size="lg">
-                            Enter Group
-                        </Button>
-                    </form>
-                    <div className="pt-2 text-center">
-                        <Button variant="link" className="text-muted-foreground text-xs" onClick={() => router.push('/groups')}>Cancel</Button>
+
+                        <form onSubmit={handleJoin} className="space-y-4">
+                            <div className="relative">
+                                <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center font-mono text-sm text-muted-foreground">@</span>
+                                <Input
+                                    placeholder="username"
+                                    value={username}
+                                    onChange={e => {
+                                        setUsername(e.target.value.replace(/\s/g, ''));
+                                        setJoinError('');
+                                    }}
+                                    autoFocus
+                                    required
+                                    maxLength={15}
+                                    className={cn(
+                                        "h-12 rounded-full border-border bg-background/60 pl-9 font-mono focus-visible:ring-foreground/30",
+                                        joinError && "border-destructive focus-visible:ring-destructive"
+                                    )}
+                                />
+                            </div>
+                            {joinError && (
+                                <p className="px-2 text-xs font-medium text-destructive animate-in slide-in-from-top-1">{joinError}</p>
+                            )}
+                            <Button type="submit" size="lg" className="group h-12 w-full rounded-full bg-foreground font-bold text-background transition-transform hover:scale-[1.02] hover:bg-foreground active:scale-95">
+                                Enter room
+                                <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                            </Button>
+                        </form>
+
+                        <div className="mt-6 flex items-center justify-between border-t border-border pt-5 font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                            <button type="button" onClick={() => router.push('/groups')} className="transition-colors hover:text-foreground">
+                                ← Cancel
+                            </button>
+                            <span>No logs · No trace</span>
+                        </div>
                     </div>
-                </Card>
+                </div>
             </div>
         );
     }
@@ -597,60 +624,63 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
     };
 
     return (
-        <div className="fixed inset-0 w-full bg-background overflow-hidden flex">
+        <div className="fixed inset-0 flex w-full overflow-hidden bg-background text-foreground">
             {/* Main Chat Area */}
-            <div className="flex-1 flex flex-col min-w-0 relative">
+            <div className="relative flex min-w-0 flex-1 flex-col">
+                <div
+                    className="pointer-events-none absolute inset-0 opacity-[0.035] dark:opacity-[0.05]"
+                    style={{ ...GRID_BG, maskImage: 'radial-gradient(ellipse at 50% 0%, black 10%, transparent 70%)', WebkitMaskImage: 'radial-gradient(ellipse at 50% 0%, black 10%, transparent 70%)' }}
+                />
+
                 {/* Header */}
-                <header className="px-4 py-3 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-20 flex items-center justify-between transition-colors shadow-sm shrink-0">
-                    <div className="flex items-center gap-3">
-                        <Button variant="ghost" size="icon" onClick={handleExitRequest} className="hover:bg-accent rounded-full -ml-2 text-muted-foreground hover:text-foreground">
+                <header className="sticky top-0 z-20 flex shrink-0 items-center justify-between border-b border-border/60 bg-background/70 px-3 py-3 backdrop-blur-xl sm:px-5">
+                    <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+                        <Button variant="ghost" size="icon" onClick={handleExitRequest} className="h-9 w-9 shrink-0 rounded-full text-muted-foreground hover:bg-accent hover:text-foreground">
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
-                        <div>
-                            <div className="flex flex-col">
-                                <h2 className="font-bold text-sm md:text-base leading-tight truncate max-w-[200px] md:max-w-md">
-                                    {groupName || "Group Chat"}
-                                </h2>
-                                {groupName && (
-                                    <span className="text-[10px] text-muted-foreground font-medium">Chat Room</span>
-                                )}
-                            </div>
-                            <div className="flex items-center text-[10px] md:text-xs text-muted-foreground font-medium animate-in fade-in">
-                                <span className="relative flex h-2 w-2 mr-1.5">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                        <div className="min-w-0">
+                            <h2 className="max-w-[160px] truncate text-sm font-bold leading-tight tracking-tight sm:max-w-md md:text-base">
+                                {groupName || "Group Chat"}
+                            </h2>
+                            <div className="mt-0.5 flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
+                                <span className="flex items-center gap-1.5">
+                                    <span className="relative flex h-1.5 w-1.5">
+                                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-foreground opacity-60" />
+                                        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-foreground" />
+                                    </span>
+                                    {userCount} online
                                 </span>
-                                {userCount} online
+                                <span className="hidden items-center gap-1 sm:flex"><Lock className="h-2.5 w-2.5" /> encrypted</span>
                             </div>
                         </div>
                     </div>
-                    <div className="flex gap-2 items-center">
+                    <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
                         <ModeToggle />
                         <Button
-                            variant="secondary"
+                            variant="outline"
                             size="sm"
                             onClick={handleShareLink}
-                            className="rounded-full"
+                            className="rounded-full border-border bg-transparent px-3 hover:border-foreground/40"
                             title="Copy invite link"
                         >
-                            <Share2 className="h-4 w-4 mr-1.5" />
-                            {shareCopied ? 'Copied' : 'Share'}
+                            {shareCopied ? <Check className="h-4 w-4 sm:mr-1.5" /> : <Share2 className="h-4 w-4 sm:mr-1.5" />}
+                            <span className="hidden sm:inline">{shareCopied ? 'Copied' : 'Share'}</span>
                         </Button>
                         <Button
-                            variant="destructive"
+                            variant="outline"
                             size="sm"
                             onClick={handleEndSession}
-                            className="rounded-full"
+                            className="rounded-full border-border bg-transparent px-3 text-xs font-semibold hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive"
                         >
-                            End Session
+                            End<span className="hidden sm:inline">&nbsp;Session</span>
                         </Button>
                         <Button
                             variant="ghost"
                             size="icon"
                             onClick={() => setShowParticipants(!showParticipants)}
                             className={cn(
-                                "rounded-full transition-all",
-                                showParticipants ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"
+                                "h-9 w-9 rounded-full transition-all",
+                                showParticipants ? "bg-foreground text-background hover:bg-foreground/90 hover:text-background" : "text-muted-foreground hover:text-foreground"
                             )}
                             title="Toggle Participants"
                         >
@@ -660,15 +690,40 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                 </header>
 
                 {/* Messages Container */}
-                <div className="flex-1 overflow-y-auto p-4 scroll-smooth pb-24">
-                    <div className="max-w-2xl mx-auto space-y-1"> {/* Reduced space-y for grouped feel */}
+                <div className="relative flex-1 overflow-y-auto scroll-smooth p-4 pb-28">
+                    <div className="mx-auto max-w-2xl space-y-1">
+                        {messages.filter(m => !m.isSystem).length === 0 && (
+                            <div className="flex flex-col items-center px-6 pb-4 pt-16 text-center animate-in fade-in duration-700">
+                                <div className="relative mb-6 grid h-20 w-20 place-items-center">
+                                    <span className="absolute inset-0 animate-ping rounded-full border border-foreground/20" />
+                                    <span className="absolute inset-3 rounded-full border border-foreground/30" />
+                                    <span className="relative grid h-10 w-10 place-items-center rounded-full bg-foreground text-background">
+                                        <Lock className="h-4 w-4" />
+                                    </span>
+                                </div>
+                                <h3 className="text-2xl font-bold tracking-tighter">Room is open.</h3>
+                                <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">
+                                    Messages are encrypted and exist only while this session is live. Say something, or share the link.
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={handleShareLink}
+                                    className="mt-6 inline-flex items-center gap-2 rounded-full border border-border px-5 py-2.5 text-sm font-semibold transition-colors hover:border-foreground/40"
+                                >
+                                    {shareCopied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
+                                    {shareCopied ? 'Link copied' : 'Copy invite link'}
+                                </button>
+                            </div>
+                        )}
                         {messages.map((msg, index) => {
                             if (msg.isSystem) {
                                 return (
-                                    <div key={msg.id} className="flex justify-center my-4 opacity-50">
-                                        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground bg-secondary px-3 py-1 rounded-full border border-border/50">
+                                    <div key={msg.id} className="my-4 flex items-center justify-center gap-3 opacity-70">
+                                        <span className="h-px w-8 bg-border" />
+                                        <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                                             {msg.content.text}
                                         </span>
+                                        <span className="h-px w-8 bg-border" />
                                     </div>
                                 );
                             }
@@ -720,7 +775,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                     >
                                         {/* Avatar: Show only if it's the TOP message of the group (showHeader) */}
                                         <div className={cn(
-                                            "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white text-xs font-bold shadow-sm select-none transition-opacity",
+                                            "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold select-none transition-opacity",
                                             getAvatarColor(msg.sender),
                                             showHeader ? "opacity-100" : "opacity-0 invisible" 
                                         )}>
@@ -731,8 +786,8 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                         <div className={cn("flex flex-col max-w-[75%]", isMe ? "items-end" : "items-start")}>
                                             {showHeader && (
                                                 <div className="flex items-baseline gap-2 mb-1 px-1">
-                                                    <span className="text-xs font-semibold text-foreground/80">{msg.sender}</span>
-                                                    <span className="text-[9px] text-muted-foreground">
+                                                    <span className="font-mono text-[11px] font-semibold text-foreground/80">{msg.sender}</span>
+                                                    <span className="font-mono text-[9px] text-muted-foreground">
                                                         {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                     </span>
                                                 </div>
@@ -742,10 +797,10 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                             <div className="relative group/bubble">
                                                 <div
                                                     className={cn(
-                                                        "relative px-4 py-2.5 shadow-sm text-sm break-words whitespace-pre-wrap leading-relaxed", // Added whitespace-pre-wrap
+                                                        "relative px-4 py-2.5 text-sm break-words whitespace-pre-wrap leading-relaxed", // Added whitespace-pre-wrap
                                                         isMe
-                                                            ? "bg-primary text-primary-foreground rounded-2xl rounded-tr-sm"
-                                                            : "bg-secondary border border-border rounded-2xl rounded-tl-sm text-foreground",
+                                                            ? "bg-foreground text-background rounded-2xl rounded-tr-md"
+                                                            : "bg-card border border-border rounded-2xl rounded-tl-md text-foreground",
                                                         !showHeader && isMe && "rounded-tr-2xl", // Round corners if middle of group
                                                         !showHeader && !isMe && "rounded-tl-2xl"
                                                     )}
@@ -892,7 +947,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                                         // Regular text message
                                                         msg.content.text.split(new RegExp(`(@${username}\\b)`, 'gi')).map((part, i) =>
                                                             part.toLowerCase() === `@${username}`.toLowerCase() ? (
-                                                                <span key={i} className="bg-primary/20 text-primary font-bold px-1 rounded mx-0.5 border border-primary/30 shadow-[0_0_10px_rgba(var(--primary),0.2)] animate-pulse">
+                                                                <span key={i} className="bg-foreground/15 font-bold px-1 rounded mx-0.5 underline underline-offset-2">
                                                                     {part}
                                                                 </span>
                                                             ) : (
@@ -923,7 +978,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                 </div>
 
                 {/* Input Area */}
-                <div className="absolute bottom-0 left-0 right-0 p-4 border-t bg-background/95 backdrop-blur z-20">
+                <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-background via-background/90 to-transparent px-3 pb-4 pt-8 sm:px-4">
                     <div className="max-w-2xl mx-auto space-y-2 relative">
 
                         {imageError && (
@@ -952,7 +1007,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                         )}
 
                         {replyingTo && (
-                            <div className="flex items-center justify-between bg-secondary p-2 px-3 rounded-lg border-l-4 border-foreground animate-in slide-in-from-bottom-2">
+                            <div className="flex items-center justify-between rounded-2xl border border-border border-l-4 border-l-foreground bg-card p-2 px-3 animate-in slide-in-from-bottom-2">
                                 <div className="text-sm overflow-hidden">
                                     <span className="font-semibold block text-xs">Replying to {replyingTo.sender}</span>
                                     <span className="text-muted-foreground truncate block text-xs mt-0.5">{replyingTo.content.text}</span>
@@ -963,44 +1018,49 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                             </div>
                         )}
 
-                        <form onSubmit={sendMessage} className="flex gap-2">
-                            <div className='relative flex justify-center items-center rounded-full shrink-0 h-11 w-11 shadow-md bg-secondary hover:bg-accent transition-all cursor-pointer' ref={plusMenuRef}>
-                                <Plus className="h-5 w-5" onClick={() => setShowPlusMenu(!showPlusMenu)} />
+                        <form onSubmit={sendMessage} className="flex items-center gap-1 rounded-full border border-border bg-card/80 p-1.5 pl-2 shadow-[0_10px_40px_-15px_rgba(0,0,0,0.35)] transition-colors focus-within:border-foreground/40">
+                            <div className="relative shrink-0" ref={plusMenuRef}>
+                                <button
+                                    type="button"
+                                    aria-label="More"
+                                    onClick={() => setShowPlusMenu(!showPlusMenu)}
+                                    className={cn("grid h-9 w-9 place-items-center rounded-full text-muted-foreground transition-all hover:bg-accent hover:text-foreground", showPlusMenu && "rotate-45 bg-accent text-foreground")}
+                                >
+                                    <Plus className="h-5 w-5" />
+                                </button>
                                 {showPlusMenu && (
-                                    <div className="absolute bottom-full left-0 mb-2 z-50 bg-popover/95 backdrop-blur border shadow-2xl rounded-xl p-2 w-40 animate-in slide-in-from-bottom-2 fade-in duration-200">
+                                    <div className="absolute bottom-full left-0 z-50 mb-3 w-44 rounded-2xl border border-border bg-popover/95 p-1.5 shadow-2xl backdrop-blur animate-in slide-in-from-bottom-2 fade-in duration-200">
                                         <button
                                             type="button"
                                             onClick={() => {
                                                 setShowPollModal(true);
                                                 setShowPlusMenu(false);
                                             }}
-                                            className="flex items-center gap-2 w-full text-sm p-2 rounded-lg hover:bg-primary/10 text-foreground transition-colors"
+                                            className="flex w-full items-center gap-2.5 rounded-xl p-2.5 text-sm text-foreground transition-colors hover:bg-accent"
                                         >
                                             <BarChart3 className="h-4 w-4" />
-                                            <span>Create Poll</span>
+                                            <span>Create poll</span>
                                         </button>
                                     </div>
                                 )}
                             </div>
-                            <Button
+                            <button
                                 type="button"
-                                size="icon"
                                 onClick={() => setShowAudioRecorder(true)}
-                                className="rounded-full shrink-0 h-11 w-11 shadow-md bg-secondary hover:bg-accent text-foreground transition-all"
+                                className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                                 title="Send voice message"
                             >
-                                <Mic className="h-5 w-5" />
-                            </Button>
-                            <Button
+                                <Mic className="h-[18px] w-[18px]" />
+                            </button>
+                            <button
                                 type="button"
-                                size="icon"
                                 onClick={() => imageInputRef.current?.click()}
                                 disabled={isUploadingImage}
-                                className="rounded-full shrink-0 h-11 w-11 shadow-md bg-secondary hover:bg-accent text-foreground transition-all disabled:opacity-50"
+                                className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50", isUploadingImage && "animate-pulse")}
                                 title="Share image (max 25MB)"
                             >
-                                <ImageIcon className="h-5 w-5" />
-                            </Button>
+                                <ImageIcon className="h-[18px] w-[18px]" />
+                            </button>
                             <input
                                 ref={imageInputRef}
                                 type="file"
@@ -1008,38 +1068,44 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                 onChange={handleImageSelect}
                                 className="hidden"
                             />
-                            <div className='relative flex justify-center items-center rounded-full shrink-0 h-11 w-11 shadow-md bg-secondary hover:bg-accent transition-all'>
+                            <div className="relative shrink-0">
                                 <div ref={emojiPickerRef}>
                                     {isEmojiPickerOpen && <EmojiPickerPopover onSelect={(emoji) => {
                                         setInput(prev => prev + emoji);
                                     }} />
                                     }
                                 </div>
-                                <Smile onClick={()=>setIsEmojiPickerOpen(isOpen=>!isOpen)} />
+                                <button
+                                    type="button"
+                                    onClick={() => setIsEmojiPickerOpen(isOpen => !isOpen)}
+                                    className="grid h-9 w-9 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                                    title="Emoji"
+                                >
+                                    <Smile className="h-[18px] w-[18px]" />
+                                </button>
                             </div>
-                            <Input
+                            <input
                                 ref={inputRef}
                                 value={input}
                                 onChange={e => {
                                     setInput(e.target.value);
-                                    setSelectedIndex(0); 
+                                    setSelectedIndex(0);
                                 }}
                                 onKeyDown={handleKeyDown}
-                                placeholder={replyingTo ? "Type your reply..." : "Type a message..."}
-                                className="flex-1 rounded-full border-input focus-visible:ring-ring bg-secondary/50 h-11 px-5"
+                                placeholder={replyingTo ? "Type your reply…" : "Message… (@ to mention)"}
+                                className="h-9 min-w-0 flex-1 bg-transparent px-2 text-sm outline-none placeholder:text-muted-foreground"
                             />
-                            
-                            <Button
+                            <button
                                 type="submit"
-                                size="icon"
-                                className={cn(
-                                    "rounded-full shrink-0 h-11 w-11 shadow-md transition-all",
-                                    input.trim() ? "bg-primary hover:bg-primary/90 scale-100" : "bg-muted text-muted-foreground scale-95"
-                                )}
                                 disabled={!input.trim()}
+                                aria-label="Send"
+                                className={cn(
+                                    "grid h-10 w-10 shrink-0 place-items-center rounded-full transition-all",
+                                    input.trim() ? "scale-100 bg-foreground text-background hover:scale-105 active:scale-95" : "scale-95 bg-muted text-muted-foreground"
+                                )}
                             >
-                                <Send className="h-5 w-5 " />
-                            </Button>
+                                <Send className="h-4 w-4" />
+                            </button>
                         </form>
                     </div>
                 </div>
@@ -1074,7 +1140,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                     insertMention(p);
                                     setShowParticipants(false);
                                 }}>
-                                    <div className={cn("w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm", getAvatarColor(p))}>
+                                    <div className={cn("w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold", getAvatarColor(p))}>
                                         {p[0].toUpperCase()}
                                     </div>
                                     <div className="flex flex-col">
@@ -1309,7 +1375,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                 insertMention(p);
                                 if (window.innerWidth < 768) setShowParticipants(false);
                             }}>
-                                <div className={cn("w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm", getAvatarColor(p))}>
+                                <div className={cn("w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold", getAvatarColor(p))}>
                                     {p[0].toUpperCase()}
                                 </div>
                                 <div className="flex flex-col">
