@@ -1,36 +1,51 @@
+import type { Metadata } from "next";
 import ChatRoom from "@/components/ChatRoom";
+import RoomEnded from "@/components/RoomEnded";
+import { supabaseAdmin } from "@/lib/server/supabaseAdmin";
+import { isUuid } from "@/lib/server/groups";
 
 interface PageProps {
     params: Promise<{ groupId: string }>;
 }
 
-import { createClient } from '@supabase/supabase-js';
+// Room links should never be indexed.
+export const metadata: Metadata = {
+    robots: { index: false, follow: false },
+};
 
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+type Lookup = { state: 'found'; name: string } | { state: 'missing' } | { state: 'unknown' };
 
-async function getGroupName(groupId: string) {
+async function lookupGroup(groupId: string): Promise<Lookup> {
+    if (!isUuid(groupId)) return { state: 'missing' };
+
     try {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
             .from('groups')
             .select('name')
             .eq('id', groupId)
-            .single();
+            .maybeSingle();
 
-        if (data) {
-            return data.name;
+        if (error) {
+            // Could not check (e.g. database policy / network). Do not lock people out of a live room.
+            console.error('Error fetching group:', error);
+            return { state: 'unknown' };
         }
+
+        return data ? { state: 'found', name: data.name } : { state: 'missing' };
     } catch (error) {
-        console.error('Error fetching group name:', error);
+        console.error('Error fetching group:', error);
+        return { state: 'unknown' };
     }
-    return "Chat Room";
 }
 
 export default async function ChatPage({ params }: PageProps) {
     const { groupId } = await params;
-    const groupName = await getGroupName(groupId);
+    const lookup = await lookupGroup(groupId);
 
-    return <ChatRoom groupId={groupId} groupName={groupName} />;
+    // The room has ended (or never existed): do not open a live channel for it.
+    if (lookup.state === 'missing') {
+        return <RoomEnded />;
+    }
+
+    return <ChatRoom groupId={groupId} groupName={lookup.state === 'found' ? lookup.name : 'Chat Room'} />;
 }

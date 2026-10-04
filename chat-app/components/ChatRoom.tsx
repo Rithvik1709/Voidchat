@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { importKey, encryptMessage, decryptMessage } from '@/lib/crypto';
+import { getRoomProof } from '@/lib/roomAuth';
 import { Button, Input, Card } from './ui/basic';
-import { Send, ArrowLeft, ArrowRight, Check, Lock, Reply, X, Users, Plus, Smile, Share2, BarChart3, Mic, Image as ImageIcon } from 'lucide-react';
+import { Send, ArrowLeft, ArrowRight, Check, Loader2, Lock, Power, Reply, X, Users, Plus, Smile, Share2, BarChart3, Mic, Image as ImageIcon } from 'lucide-react';
 import AudioRecorder from './AudioRecorder';
 import AudioPlayer from './AudioPlayer';
 import { cn } from '@/lib/utils';
@@ -34,6 +35,7 @@ interface MessageContent {
     poll?: PollData;
     audio?: string; // base64 encoded audio data
     image?: string; // URL to uploaded image
+    from?: string; // sender name, bound inside the encrypted payload
 }
 
 interface Message {
@@ -61,6 +63,94 @@ const getAvatarColor = (name: string) => {
     return shades[Math.abs(hash) % shades.length];
 };
 
+// ---------------------------------------------------------------------------
+// Input hardening: everything that arrives over the room channel is untrusted.
+// ---------------------------------------------------------------------------
+const MAX_TEXT_LENGTH = 4000;
+const MAX_NAME_LENGTH = 15;
+const MAX_AUDIO_RECEIVE_B64 = 400_000;
+const MAX_AUDIO_SEND_B64 = 160_000; // keeps the encrypted broadcast under realtime payload limits
+const MEDIA_URL_PREFIX = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/chat-images/`;
+
+const newId = () =>
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+    typeof v === 'object' && v !== null && !Array.isArray(v);
+
+const isMediaUrl = (v: unknown): v is string =>
+    typeof v === 'string' && v.startsWith(MEDIA_URL_PREFIX) && !/\s/.test(v) && v.length < 600;
+
+function sanitizePoll(raw: unknown): PollData | null {
+    if (!isRecord(raw)) return null;
+    const { question, options, votes, creator, type } = raw;
+    if (typeof question !== 'string' || !question || question.length > 200) return null;
+    if (!Array.isArray(options) || options.length < 2 || options.length > 10) return null;
+    if (!options.every(o => typeof o === 'string' && o.length > 0 && o.length <= 100)) return null;
+    const opts = Array.from(new Set(options as string[]));
+    if (opts.length < 2) return null;
+    if (type !== 'single' && type !== 'multiple') return null;
+
+    const safeVotes: PollData['votes'] = {};
+    const rawVotes = isRecord(votes) ? votes : {};
+    for (const o of opts) {
+        const v = rawVotes[o];
+        safeVotes[o] = Array.isArray(v)
+            ? Array.from(new Set(v.filter((u): u is string => typeof u === 'string' && u.length > 0 && u.length <= MAX_NAME_LENGTH))).slice(0, 200)
+            : [];
+    }
+    return {
+        question,
+        options: opts,
+        votes: safeVotes,
+        creator: typeof creator === 'string' ? creator.slice(0, MAX_NAME_LENGTH) : '',
+        type,
+    };
+}
+
+function sanitizeContent(raw: unknown): MessageContent | null {
+    if (!isRecord(raw)) return null;
+    if (typeof raw.text !== 'string' || raw.text.length > MAX_TEXT_LENGTH) return null;
+
+    const content: MessageContent = { text: raw.text };
+
+    if (typeof raw.from === 'string') content.from = raw.from;
+
+    if (isRecord(raw.replyTo)) {
+        const r = raw.replyTo;
+        if (typeof r.id === 'string' && typeof r.sender === 'string' && typeof r.text === 'string') {
+            content.replyTo = { id: r.id.slice(0, 64), sender: r.sender.slice(0, MAX_NAME_LENGTH), text: r.text.slice(0, 80) };
+        }
+    }
+    if (raw.poll !== undefined) {
+        const poll = sanitizePoll(raw.poll);
+        if (!poll) return null;
+        content.poll = poll;
+    }
+    if (typeof raw.audio === 'string' && raw.audio.length <= MAX_AUDIO_RECEIVE_B64 && /^[A-Za-z0-9+/=]+$/.test(raw.audio)) {
+        content.audio = raw.audio;
+    }
+    if (isMediaUrl(raw.image)) content.image = raw.image;
+
+    return content;
+}
+
+/** Apply one person's selections to a poll without touching anyone else's votes. */
+function applyVote(poll: PollData, voter: string, selections: string[]): PollData {
+    const chosen = new Set(selections.filter(o => poll.options.includes(o)));
+    const picked = poll.type === 'single' ? Array.from(chosen).slice(0, 1) : Array.from(chosen);
+    const votes: PollData['votes'] = {};
+    for (const o of poll.options) {
+        const others = (poll.votes[o] || []).filter(u => u !== voter);
+        votes[o] = picked.includes(o) ? [...others, voter] : others;
+    }
+    return { ...poll, votes };
+}
+
 const GRID_BG = {
     backgroundImage:
         'linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)',
@@ -79,6 +169,10 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
     const [error, setError] = useState('');
     const [joinError, setJoinError] = useState('');
     const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+    const [showEndConfirm, setShowEndConfirm] = useState(false);
+    const [isEnding, setIsEnding] = useState(false);
+    const [endError, setEndError] = useState('');
+    const [sessionEnded, setSessionEnded] = useState<{ by: string; self: boolean } | null>(null);
     const [replyingTo, setReplyingTo] = useState<Message | null>(null);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
@@ -91,7 +185,11 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
     const [showAudioRecorder, setShowAudioRecorder] = useState(false);
     const [isUploadingImage, setIsUploadingImage] = useState(false);
     const [imageError, setImageError] = useState('');
+    const [sendError, setSendError] = useState('');
     const plusMenuRef = useRef<HTMLDivElement>(null);
+    const proofRef = useRef('');
+    const usernameRef = useRef('');
+    const messagesRef = useRef<Message[]>([]);
 
     const emojiPickerRef = useRef<HTMLDivElement>(null)
     const channelRef = useRef<RealtimeChannel | null>(null);
@@ -99,6 +197,14 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
     const inputRef = useRef<HTMLInputElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
     const router = useRouter();
+
+    useEffect(() => { usernameRef.current = username; }, [username]);
+    useEffect(() => { messagesRef.current = messages; }, [messages]);
+
+    const flashSendError = (message: string) => {
+        setSendError(message);
+        setTimeout(() => setSendError(''), 4000);
+    };
 
     const confirmLeave = () => {
         router.push('/groups');
@@ -114,7 +220,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
 
     useEffect(() => {
         const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-            if (isJoined) {
+            if (isJoined && !sessionEnded) {
                 e.preventDefault();
                 e.returnValue = ''; 
             }
@@ -122,7 +228,14 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
 
         window.addEventListener('beforeunload', handleBeforeUnload);
         return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-    }, [isJoined]);
+    }, [isJoined, sessionEnded]);
+
+    // After a session ends, send everyone back to the group list
+    useEffect(() => {
+        if (!sessionEnded) return;
+        const t = setTimeout(() => router.push('/groups'), 4000);
+        return () => clearTimeout(t);
+    }, [sessionEnded, router]);
 
     useEffect(() => {
         if (replyingTo) {
@@ -130,7 +243,22 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
         }
     }, [replyingTo]);
 
-    // Initialize encryption key
+    // Close the emoji picker / plus menu when clicking outside them
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+                setIsEmojiPickerOpen(false);
+            }
+            if (plusMenuRef.current && !plusMenuRef.current.contains(event.target as Node)) {
+                setShowPlusMenu(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    // Initialize encryption key (and the proof the server uses to check we know it)
     useEffect(() => {
         const hash = window.location.hash;
         const params = new URLSearchParams(hash.replace('#', '?'));
@@ -143,7 +271,9 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
 
         const init = async () => {
             try {
-                const importedKey = await importKey(decodeURIComponent(keyString));
+                const rawKey = decodeURIComponent(keyString);
+                const importedKey = await importKey(rawKey);
+                proofRef.current = await getRoomProof(rawKey);
                 setKey(importedKey);
             } catch (err) {
                 console.error(err);
@@ -151,16 +281,6 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
             }
         };
 
-        const handleClickOutside = (event: MouseEvent) => {
-            if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
-                setIsEmojiPickerOpen(false);
-            }
-            if (plusMenuRef.current && !plusMenuRef.current.contains(event.target as Node)) {
-                setShowPlusMenu(false);
-            }
-        };
-        
-        document.addEventListener('mousedown', handleClickOutside);
         init();
     }, []);
 
@@ -177,71 +297,92 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
 
         channelRef.current = channel;
 
-        const handleMessage = async (payload: any) => {
+        const handleMessage = async (payload: unknown) => {
             try {
+                if (!isRecord(payload)) return;
+                const { id, sender, timestamp, encryptedPayload } = payload;
+                if (typeof id !== 'string' || !id || id.length > 64) return;
+                if (typeof sender !== 'string' || !sender || sender.length > MAX_NAME_LENGTH || sender === 'System') return;
+                if (typeof encryptedPayload !== 'string') return;
 
-                const decryptedString = await decryptMessage(payload.encryptedPayload, key);
-                let content: MessageContent;
-
+                const decryptedString = await decryptMessage(encryptedPayload, key);
+                let parsed: unknown;
                 try {
-                    content = JSON.parse(decryptedString);
-                    if (typeof content !== 'object') throw new Error('Not object');
+                    parsed = JSON.parse(decryptedString);
                 } catch {
-                    content = { text: decryptedString };
+                    return;
                 }
 
+                const content = sanitizeContent(parsed);
+                // The sender name is bound inside the encrypted payload, so it cannot be swapped on the envelope
+                if (!content || content.from !== sender) return;
+
+                const ts = typeof timestamp === 'string' && !Number.isNaN(Date.parse(timestamp)) ? timestamp : new Date().toISOString();
+
                 setMessages(prev => {
-                    if (prev.some(m => m.id === payload.id)) return prev;
-                    return [...prev, { ...payload, content }];
+                    if (prev.some(m => m.id === id)) return prev;
+                    return [...prev, { id, sender, timestamp: ts, content, encryptedPayload }];
                 });
             } catch (err) {
                 console.error('Failed to decrypt message', err);
             }
         };
 
-        const handleVote = async (payload: any) => {
+        // A vote can only change that voter's own selections. It can never rewrite a message.
+        const handleVote = async (payload: unknown) => {
             try {
-                const decryptedString = await decryptMessage(payload.encryptedPayload, key);
-                const content: MessageContent = JSON.parse(decryptedString);
-                
-                setMessages(prev => prev.map(m => 
-                    m.id === payload.messageId ? { ...m, content } : m
+                if (!isRecord(payload) || typeof payload.messageId !== 'string' || typeof payload.encryptedPayload !== 'string') return;
+                const parsed: unknown = JSON.parse(await decryptMessage(payload.encryptedPayload, key));
+                if (!isRecord(parsed) || typeof parsed.voter !== 'string' || !Array.isArray(parsed.selections)) return;
+                const voter = parsed.voter.slice(0, MAX_NAME_LENGTH);
+                const selections = parsed.selections.filter((o): o is string => typeof o === 'string');
+                const messageId = payload.messageId;
+
+                setMessages(prev => prev.map(m =>
+                    m.id === messageId && m.content.poll
+                        ? { ...m, content: { ...m.content, poll: applyVote(m.content.poll, voter, selections) } }
+                        : m
                 ));
             } catch (err) {
                 console.error('Vote decrypt failed', err);
             }
         };
 
+        // Presence "join" events also fire for everyone already in the room (and for yourself)
+        // while the first state sync arrives. Only announce people who arrive afterwards.
+        let presenceReady = false;
+        const announce = (text: string) =>
+            setMessages(prev => [...prev, {
+                id: newId(),
+                sender: 'System',
+                content: { text },
+                timestamp: new Date().toISOString(),
+                isSystem: true
+            }]);
+
         channel
             .on('broadcast', { event: 'message' }, ({ payload }) => handleMessage(payload))
             .on('broadcast', { event: 'vote' }, ({ payload }) => handleVote(payload))
-            .on('broadcast', { event: 'clear' }, () => {
+            .on('broadcast', { event: 'clear' }, ({ payload }) => {
                 setMessages([]);
                 setReplyingTo(null);
+                const by = isRecord(payload) && typeof payload.by === 'string' ? payload.by.slice(0, MAX_NAME_LENGTH) : '';
+                setSessionEnded({ by: by || 'The host', self: false });
             })
             .on('presence', { event: 'sync' }, () => {
                 const newState = channel.presenceState();
                 const users = Object.keys(newState).filter(k => k && k !== 'undefined');
                 setParticipants(users);
                 setUserCount(users.length);
+                presenceReady = true;
             })
-            .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-                setMessages(prev => [...prev, {
-                    id: Date.now().toString(),
-                    sender: 'System',
-                    content: { text: `${key} joined` },
-                    timestamp: new Date().toISOString(),
-                    isSystem: true
-                }]);
+            .on('presence', { event: 'join' }, ({ key: who }) => {
+                if (!presenceReady || !who || who === 'undefined' || who === usernameRef.current) return;
+                announce(`${who} joined`);
             })
-            .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-                setMessages(prev => [...prev, {
-                    id: Date.now().toString(),
-                    sender: 'System',
-                    content: { text: `${key} left` },
-                    timestamp: new Date().toISOString(),
-                    isSystem: true
-                }]);
+            .on('presence', { event: 'leave' }, ({ key: who }) => {
+                if (!presenceReady || !who || who === 'undefined' || who === usernameRef.current) return;
+                announce(`${who} left`);
             })
             .subscribe(async (status) => {
                 if (status === 'SUBSCRIBED') {
@@ -251,54 +392,58 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                 }
             });
 
-        let heartbeatInterval: NodeJS.Timeout;
-
-        if (isJoined && username) {
-            fetch(`/api/groups/${groupId}/membership`, {
+        const postJson = (url: string, body: Record<string, unknown>) =>
+            fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'join' })
-            }).catch(e => console.error('Join failed', e));
+                body: JSON.stringify({ ...body, proof: proofRef.current })
+            });
+
+        let heartbeatInterval: ReturnType<typeof setInterval> | undefined;
+        let leftRoom = false;
+
+        // Runs on unmount AND when the tab is closed / backgrounded for good (pagehide),
+        // because React cleanup never runs when a tab is simply closed.
+        const leaveRoom = () => {
+            if (!isJoined || leftRoom) return;
+            leftRoom = true;
+            const data = JSON.stringify({ action: 'leave', proof: proofRef.current });
+            const url = `/api/groups/${groupId}/membership`;
+            if (navigator.sendBeacon) {
+                navigator.sendBeacon(url, new Blob([data], { type: 'application/json' }));
+            } else {
+                fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    keepalive: true,
+                    body: data
+                }).catch(e => console.error('Leave failed', e));
+            }
+        };
+
+        if (isJoined && username) {
+            postJson(`/api/groups/${groupId}/membership`, { action: 'join' })
+                .catch(e => console.error('Join failed', e));
 
             heartbeatInterval = setInterval(async () => {
                 try {
-                    await fetch('/api/groups/heartbeat', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ groupId })
-                    });
+                    await postJson('/api/groups/heartbeat', { groupId });
                 } catch (e) {
                     console.error('Heartbeat failed', e);
                 }
-            }, 60000); 
+            }, 60000);
 
-            fetch('/api/groups/heartbeat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ groupId })
-            }).catch(err => console.error(err));
+            postJson('/api/groups/heartbeat', { groupId }).catch(err => console.error(err));
+
+            window.addEventListener('pagehide', leaveRoom);
         }
 
         return () => {
             if (heartbeatInterval) clearInterval(heartbeatInterval);
+            window.removeEventListener('pagehide', leaveRoom);
             supabase.removeChannel(channel);
             channelRef.current = null;
-
-            if (isJoined) {
-
-                const data = JSON.stringify({ action: 'leave' });
-                if (navigator.sendBeacon) {
-                    const blob = new Blob([data], { type: 'application/json' });
-                    navigator.sendBeacon(`/api/groups/${groupId}/membership`, blob);
-                } else {
-                    fetch(`/api/groups/${groupId}/membership`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        keepalive: true, 
-                        body: data
-                    }).catch(e => console.error('Leave failed', e));
-                }
-            }
+            leaveRoom();
         };
     }, [key, isJoined, groupId]);
 
@@ -320,25 +465,47 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
         setIsJoined(true);
     };
 
-    const handleEndSession = async () => {
-        if (!channelRef.current) return;
+    const handleEndSession = () => {
+        setEndError('');
+        setShowEndConfirm(true);
+    };
 
-        const confirmed = window.confirm('End session and clear all messages for everyone?');
-        if (!confirmed) return;
+    const confirmEndSession = async () => {
+        if (isEnding) return;
+        setIsEnding(true);
+        setEndError('');
 
         try {
-            await channelRef.current.send({
-                type: 'broadcast',
-                event: 'clear',
-                payload: { by: username, at: new Date().toISOString() }
+            // Delete the room (and its media) first so a failure never half-ends the session
+            const res = await fetch(`/api/groups/${groupId}/end`, {
+                method: 'DELETE',
+                headers: { 'x-room-proof': proofRef.current }
             });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error || 'Could not end the session. Please try again.');
+            }
 
-            await fetch(`/api/groups/${groupId}/end`, { method: 'DELETE' });
+            // Tell everyone else in the room it is over
+            try {
+                await channelRef.current?.send({
+                    type: 'broadcast',
+                    event: 'clear',
+                    payload: { by: username, at: new Date().toISOString() }
+                });
+            } catch (broadcastErr) {
+                console.error('Failed to notify participants', broadcastErr);
+            }
 
             setMessages([]);
             setReplyingTo(null);
+            setShowEndConfirm(false);
+            setSessionEnded({ by: username, self: true });
         } catch (err) {
             console.error('Failed to end session', err);
+            setEndError(err instanceof Error ? err.message : 'Could not end the session.');
+        } finally {
+            setIsEnding(false);
         }
     };
 
@@ -355,6 +522,31 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
         }
     };
 
+    // Every outgoing message goes through here so a failed send is reported instead of
+    // silently showing up in your own chat only.
+    const sendBroadcast = async (event: string, payload: unknown) => {
+        const channel = channelRef.current;
+        if (!channel) throw new Error('Not connected yet. Try again in a moment.');
+        const status = await channel.send({ type: 'broadcast', event, payload });
+        if (status !== 'ok') {
+            throw new Error(status === 'timed out' ? 'Message timed out. Check your connection.' : 'Message failed to send.');
+        }
+    };
+
+    const postMessage = async (content: MessageContent) => {
+        if (!key) throw new Error('Encryption key is not ready yet.');
+        const bound: MessageContent = { ...content, from: username };
+        const encryptedPayload = await encryptMessage(JSON.stringify(bound), key);
+        const messageData = {
+            id: newId(),
+            sender: username,
+            timestamp: new Date().toISOString(),
+            encryptedPayload
+        };
+        await sendBroadcast('message', messageData);
+        setMessages(prev => [...prev, { ...messageData, content: bound }]);
+    };
+
     const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -367,11 +559,12 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
             return;
         }
 
-        // Validate file type
-        const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
+        // Validate file type (SVG is not allowed: it can carry scripts)
+        const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
         if (!validTypes.includes(file.type)) {
-            setImageError('Only image files are allowed');
+            setImageError('Only JPEG, PNG, GIF and WebP images are allowed');
             setTimeout(() => setImageError(''), 3000);
+            if (imageInputRef.current) imageInputRef.current.value = '';
             return;
         }
 
@@ -382,6 +575,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
             const formData = new FormData();
             formData.append('file', file);
             formData.append('groupId', groupId);
+            formData.append('proof', proofRef.current);
 
             const response = await fetch('/api/upload', {
                 method: 'POST',
@@ -389,43 +583,18 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
             });
 
             if (!response.ok) {
-                const error = await response.json();
+                const error = await response.json().catch(() => ({}));
                 throw new Error(error.error || 'Upload failed');
             }
 
             const data = await response.json();
-            
-            // Send image message
-            if (key) {
-                const content: MessageContent = {
-                    text: '🖼️ Image',
-                    image: data.url
-                };
-
-                const payloadString = JSON.stringify(content);
-                const encryptedPayload = await encryptMessage(payloadString, key);
-
-                const messageData = {
-                    id: Date.now().toString(),
-                    sender: username,
-                    timestamp: new Date().toISOString(),
-                    encryptedPayload: encryptedPayload
-                };
-
-                await supabase.channel(`room:${groupId}`).send({
-                    type: 'broadcast',
-                    event: 'message',
-                    payload: messageData
-                });
-                setMessages(prev => [...prev, { ...messageData, content }]);
-            }
+            await postMessage({ text: '🖼️ Image', image: data.url });
         } catch (err) {
             console.error('Image upload error:', err);
             setImageError(err instanceof Error ? err.message : 'Failed to upload image');
             setTimeout(() => setImageError(''), 3000);
         } finally {
             setIsUploadingImage(false);
-            // Reset input
             if (imageInputRef.current) {
                 imageInputRef.current.value = '';
             }
@@ -440,81 +609,48 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
         if (!input.trim() || !key) return;
 
         try {
-            const content: MessageContent = {
-                text: input.trim(),
+            await postMessage({
+                text: input.trim().slice(0, MAX_TEXT_LENGTH),
                 replyTo: replyingTo ? {
                     id: replyingTo.id,
                     sender: replyingTo.sender,
                     text: replyingTo.content.text.substring(0, 50) + (replyingTo.content.text.length > 50 ? '...' : '')
                 } : undefined
-            };
-
-            const payloadString = JSON.stringify(content);
-            const encryptedPayload = await encryptMessage(payloadString, key);
-
-            const messageData = {
-                id: Date.now().toString(),
-                sender: username,
-                timestamp: new Date().toISOString(),
-                encryptedPayload: encryptedPayload
-            };
-
-            await supabase.channel(`room:${groupId}`).send({
-                type: 'broadcast',
-                event: 'message',
-                payload: messageData
             });
-            setMessages(prev => [...prev, { ...messageData, content }]);
 
             setInput('');
             setReplyingTo(null);
         } catch (err) {
+            // Keep what was typed so it can be retried
             console.error(err);
+            flashSendError(err instanceof Error ? err.message : 'Message failed to send.');
         }
     };
 
     const sendAudioMessage = async (audioBlob: Blob) => {
         if (!key) return;
 
-        try {
-            // Convert blob to base64
-            const reader = new FileReader();
-            reader.readAsDataURL(audioBlob);
-            reader.onloadend = async () => {
-                const base64Audio = reader.result as string;
-                // Remove data URL prefix
-                const base64Data = base64Audio.split(',')[1];
-
-                const content: MessageContent = {
-                    text: '🎤 Voice message',
-                    audio: base64Data
-                };
-
-                const payloadString = JSON.stringify(content);
-                const encryptedPayload = await encryptMessage(payloadString, key);
-
-                const messageData = {
-                    id: Date.now().toString(),
-                    sender: username,
-                    timestamp: new Date().toISOString(),
-                    encryptedPayload: encryptedPayload
-                };
-
-                await supabase.channel(`room:${groupId}`).send({
-                    type: 'broadcast',
-                    event: 'message',
-                    payload: messageData
-                });
-                setMessages(prev => [...prev, { ...messageData, content }]);
-                
-                // Clean up the UI
-                setShowAudioRecorder(false);
-            };
-        } catch (err) {
-            console.error('Error sending audio:', err);
-            // Clean up even on error
+        const reader = new FileReader();
+        reader.onerror = () => {
             setShowAudioRecorder(false);
-        }
+            flashSendError('Could not read the recording.');
+        };
+        reader.onloadend = async () => {
+            try {
+                const base64Data = String(reader.result).split(',')[1] || '';
+                if (!base64Data) throw new Error('The recording was empty.');
+                if (base64Data.length > MAX_AUDIO_SEND_B64) {
+                    throw new Error('Voice message is too long. Keep it under 30 seconds.');
+                }
+                await postMessage({ text: '🎤 Voice message', audio: base64Data });
+            } catch (err) {
+                console.error('Error sending audio:', err);
+                flashSendError(err instanceof Error ? err.message : 'Voice message failed to send.');
+            } finally {
+                setShowAudioRecorder(false);
+            }
+        };
+        reader.readAsDataURL(audioBlob);
     };
 
     if (error) {
@@ -761,7 +897,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                         drag="x"
                                         dragConstraints={{ left: 0, right: 0 }}
                                         dragElastic={0.2}
-                                        onDragEnd={(e: any, info: PanInfo) => {
+                                        onDragEnd={(_e: unknown, info: PanInfo) => {
                                             if (info.offset.x > 50) {
                                                 setReplyingTo(msg);
                                             }
@@ -842,51 +978,23 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                                                             key={idx}
                                                                             onClick={async () => {
                                                                                 const poll = msg.content.poll!;
-                                                                                const newVotes = { ...poll.votes };
-                                                                                
-                                                                                // If single choice, remove vote from all other options
-                                                                                if (poll.type === 'single') {
-                                                                                    Object.keys(newVotes).forEach(opt => {
-                                                                                        newVotes[opt] = newVotes[opt].filter(u => u !== username);
-                                                                                    });
-                                                                                }
-                                                                                
-                                                                                // Toggle vote for this option
-                                                                                if (hasVoted) {
-                                                                                    newVotes[option] = newVotes[option].filter(u => u !== username);
-                                                                                } else {
-                                                                                    newVotes[option] = [...(newVotes[option] || []), username];
-                                                                                }
-                                                                                
-                                                                                const updatedPoll: PollData = {
-                                                                                    ...poll,
-                                                                                    votes: newVotes
-                                                                                };
-                                                                                
-                                                                                // Broadcast the updated poll
+                                                                                const mine = poll.options.filter(o => poll.votes[o]?.includes(username));
+                                                                                const selections = poll.type === 'single'
+                                                                                    ? (hasVoted ? [] : [option])
+                                                                                    : (hasVoted ? mine.filter(o => o !== option) : [...mine, option]);
+
                                                                                 try {
-                                                                                    const content: MessageContent = {
-                                                                                        text: msg.content.text,
-                                                                                        poll: updatedPoll
-                                                                                    };
-                                                                                    const payloadString = JSON.stringify(content);
-                                                                                    const encryptedPayload = await encryptMessage(payloadString, key!);
-                                                                                    
-                                                                                    await supabase.channel(`room:${groupId}`).send({
-                                                                                        type: 'broadcast',
-                                                                                        event: 'vote',
-                                                                                        payload: {
-                                                                                            messageId: msg.id,
-                                                                                            encryptedPayload: encryptedPayload
-                                                                                        }
-                                                                                    });
-                                                                                    
-                                                                                    // Update local state
-                                                                                    setMessages(prev => prev.map(m => 
-                                                                                        m.id === msg.id ? { ...m, content } : m
+                                                                                    // Only this voter's selections travel; nobody else's votes or the question can change
+                                                                                    const encryptedPayload = await encryptMessage(JSON.stringify({ voter: username, selections }), key!);
+                                                                                    await sendBroadcast('vote', { messageId: msg.id, encryptedPayload });
+                                                                                    setMessages(prev => prev.map(m =>
+                                                                                        m.id === msg.id && m.content.poll
+                                                                                            ? { ...m, content: { ...m.content, poll: applyVote(m.content.poll, username, selections) } }
+                                                                                            : m
                                                                                     ));
                                                                                 } catch (err) {
                                                                                     console.error('Vote error:', err);
+                                                                                    flashSendError(err instanceof Error ? err.message : 'Vote failed to send.');
                                                                                 }
                                                                             }}
                                                                             className={cn(
@@ -935,6 +1043,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                                         <div className="flex flex-col gap-2">
                                                             <img
                                                                 src={msg.content.image}
+                                                                referrerPolicy="no-referrer"
                                                                 alt="Shared image"
                                                                 className="max-w-xs max-h-96 rounded-lg shadow-md object-cover"
                                                                 loading="lazy"
@@ -945,7 +1054,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                                         </div>
                                                     ) : (
                                                         // Regular text message
-                                                        msg.content.text.split(new RegExp(`(@${username}\\b)`, 'gi')).map((part, i) =>
+                                                        msg.content.text.split(new RegExp(`(@${escapeRegExp(username)})(?!\\w)`, 'gi')).map((part, i) =>
                                                             part.toLowerCase() === `@${username}`.toLowerCase() ? (
                                                                 <span key={i} className="bg-foreground/15 font-bold px-1 rounded mx-0.5 underline underline-offset-2">
                                                                     {part}
@@ -980,6 +1089,12 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                 {/* Input Area */}
                 <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-background via-background/90 to-transparent px-3 pb-4 pt-8 sm:px-4">
                     <div className="max-w-2xl mx-auto space-y-2 relative">
+
+                        {sendError && (
+                            <div className="px-3 py-2 rounded-2xl bg-destructive/10 border border-destructive/50 text-destructive text-sm animate-in slide-in-from-top-1">
+                                {sendError}
+                            </div>
+                        )}
 
                         {imageError && (
                             <div className="px-3 py-2 rounded-lg bg-destructive/10 border border-destructive/50 text-destructive text-sm animate-in slide-in-from-top-1">
@@ -1068,13 +1183,11 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                 onChange={handleImageSelect}
                                 className="hidden"
                             />
-                            <div className="relative shrink-0">
-                                <div ref={emojiPickerRef}>
-                                    {isEmojiPickerOpen && <EmojiPickerPopover onSelect={(emoji) => {
-                                        setInput(prev => prev + emoji);
-                                    }} />
-                                    }
-                                </div>
+                            <div className="relative shrink-0" ref={emojiPickerRef}>
+                                {isEmojiPickerOpen && <EmojiPickerPopover onSelect={(emoji) => {
+                                    setInput(prev => prev + emoji);
+                                }} />
+                                }
                                 <button
                                     type="button"
                                     onClick={() => setIsEmojiPickerOpen(isOpen => !isOpen)}
@@ -1267,45 +1380,28 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                     </Button>
                                     <Button
                                         onClick={async () => {
-                                            if (!pollQuestion.trim() || pollOptions.filter(o => o.trim()).length < 2) {
+                                            const filteredOptions = Array.from(new Set(pollOptions.map(o => o.trim()).filter(Boolean)));
+                                            if (!pollQuestion.trim() || filteredOptions.length < 2) {
                                                 return;
                                             }
-                                            const filteredOptions = pollOptions.filter(o => o.trim());
                                             const pollData: PollData = {
-                                                question: pollQuestion.trim(),
-                                                options: filteredOptions,
-                                                votes: Object.fromEntries(filteredOptions.map(o => [o, []])),
+                                                question: pollQuestion.trim().slice(0, 200),
+                                                options: filteredOptions.map(o => o.slice(0, 100)),
+                                                votes: Object.fromEntries(filteredOptions.map(o => [o.slice(0, 100), []])),
                                                 creator: username,
                                                 type: pollType
                                             };
-                                            
+
                                             try {
-                                                const content: MessageContent = {
-                                                    text: `📊 Poll: ${pollData.question}`,
-                                                    poll: pollData
-                                                };
-                                                const payloadString = JSON.stringify(content);
-                                                const encryptedPayload = await encryptMessage(payloadString, key!);
-                                                const messageData = {
-                                                    id: Date.now().toString(),
-                                                    sender: username,
-                                                    timestamp: new Date().toISOString(),
-                                                    encryptedPayload: encryptedPayload
-                                                };
-                                                await supabase.channel(`room:${groupId}`).send({
-                                                    type: 'broadcast',
-                                                    event: 'message',
-                                                    payload: messageData
-                                                });
-                                                setMessages(prev => [...prev, { ...messageData, content }]);
+                                                await postMessage({ text: `📊 Poll: ${pollData.question}`, poll: pollData });
+                                                setShowPollModal(false);
+                                                setPollQuestion('');
+                                                setPollOptions(['', '']);
+                                                setPollType('single');
                                             } catch (err) {
                                                 console.error(err);
+                                                flashSendError(err instanceof Error ? err.message : 'Poll failed to send.');
                                             }
-                                            
-                                            setShowPollModal(false);
-                                            setPollQuestion('');
-                                            setPollOptions(['', '']);
-                                            setPollType('single');
                                         }}
                                         disabled={!pollQuestion.trim() || pollOptions.filter(o => o.trim()).length < 2}
                                         className="flex-1 rounded-full h-11 shadow-lg"
@@ -1315,6 +1411,44 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                 </div>
                             </div>
                         </Card>
+                    </div>
+                )}
+
+                {/* End Session Confirmation Dialog */}
+                {showEndConfirm && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-md animate-in fade-in duration-200">
+                        <div className="relative w-full max-w-sm overflow-hidden rounded-[2rem] border border-border bg-card p-7 text-center shadow-[0_30px_80px_-30px_rgba(0,0,0,0.5)] animate-in zoom-in-95 duration-300">
+                            <div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-2xl bg-foreground text-background">
+                                <Power className="h-6 w-6" />
+                            </div>
+                            <h3 className="text-2xl font-bold tracking-tighter text-foreground">End session?</h3>
+                            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                                This closes the room for everyone and permanently deletes all messages and shared media. This can&apos;t be undone.
+                            </p>
+                            {endError && (
+                                <p className="mt-4 rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-2.5 text-xs font-medium text-destructive animate-in slide-in-from-top-1">
+                                    {endError}
+                                </p>
+                            )}
+                            <div className="mt-6 flex gap-3">
+                                <Button
+                                    variant="outline"
+                                    disabled={isEnding}
+                                    onClick={() => setShowEndConfirm(false)}
+                                    className="h-11 flex-1 rounded-full border-border hover:border-foreground/40"
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    disabled={isEnding}
+                                    onClick={confirmEndSession}
+                                    className="h-11 flex-1 rounded-full bg-foreground font-bold text-background hover:bg-foreground/90"
+                                >
+                                    {isEnding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                    {isEnding ? 'Ending…' : endError ? 'Try again' : 'End session'}
+                                </Button>
+                            </div>
+                        </div>
                     </div>
                 )}
 
@@ -1329,7 +1463,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                 <div className="space-y-2">
                                     <h3 className="text-xl font-bold tracking-tight text-foreground">Leave Chat?</h3>
                                     <p className="text-sm text-muted-foreground">
-                                        Are you sure you want to leave? Your presence will be removed and you won't receive new messages.
+                                        Are you sure you want to leave? Your presence will be removed and you won&apos;t receive new messages.
                                     </p>
                                 </div>
                                 <div className="flex gap-3 pt-2">
@@ -1396,6 +1530,42 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                     </div>
                 </div>
             </div>
+
+            {/* Session ended overlay */}
+            {sessionEnded && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-background p-6 text-foreground animate-in fade-in duration-500">
+                    <div
+                        className="pointer-events-none absolute inset-0 opacity-[0.05] dark:opacity-[0.07]"
+                        style={{ ...GRID_BG, maskImage: 'radial-gradient(ellipse at center, black 10%, transparent 70%)', WebkitMaskImage: 'radial-gradient(ellipse at center, black 10%, transparent 70%)' }}
+                    />
+                    <div className="relative flex max-w-md flex-col items-center text-center">
+                        <div className="relative mb-8 grid h-24 w-24 place-items-center">
+                            <span className="absolute inset-0 animate-ping rounded-full border border-foreground/20" />
+                            <span className="absolute inset-3 rounded-full border border-foreground/30" />
+                            <span className="relative grid h-12 w-12 place-items-center rounded-full bg-foreground text-background">
+                                <Power className="h-5 w-5" />
+                            </span>
+                        </div>
+                        <div className="mb-4 font-mono text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
+                            0 bytes kept
+                        </div>
+                        <h2 className="text-4xl font-bold leading-[0.95] tracking-tighter md:text-5xl">Session ended.</h2>
+                        <p className="mt-4 text-muted-foreground">
+                            {sessionEnded.self ? 'You closed this room.' : `${sessionEnded.by} closed this room.`} All messages and media have been wiped.
+                        </p>
+                        <Button
+                            onClick={() => router.push('/groups')}
+                            className="group mt-8 h-12 rounded-full bg-foreground px-8 font-bold text-background hover:bg-foreground/90"
+                        >
+                            Back to groups
+                            <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                        </Button>
+                        <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                            Redirecting automatically…
+                        </p>
+                    </div>
+                </div>
+            )}
 
             {/* Audio Recorder Modal */}
             {showAudioRecorder && (

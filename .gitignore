@@ -4,3 +4,8 @@
 # Image uploads (temporary files)
 public/uploads/*
 !public/uploads/.gitkeep
+
+# env files and OS junk
+.env*
+!.env.example
+.DS_Store

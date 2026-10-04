@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, Input, Card, CardHeader, CardTitle, CardContent } from './ui/basic';
+import { Button, Input } from './ui/basic';
 import { generateKey, exportKey } from '@/lib/crypto';
-import { Loader2, Plus, X, Sparkles } from 'lucide-react';
+import { getRoomProof, saveRoomKey } from '@/lib/roomAuth';
+import { ArrowRight, Check, Copy, Loader2, Lock, X } from 'lucide-react';
 
 export default function CreateGroupModal({ onClose, creatorId, onSuccess }: { onClose: () => void; creatorId: string; onSuccess?: () => void }) {
     const [name, setName] = useState('');
@@ -29,7 +30,7 @@ export default function CreateGroupModal({ onClose, creatorId, onSuccess }: { on
                 body: JSON.stringify({
                     name: name.trim(),
                     tags: tags.split(',').map(t => t.trim()).filter(Boolean),
-                    key: exportedKey,
+                    proof: await getRoomProof(exportedKey),
                     creator_id: creatorId
                 })
             });
@@ -42,6 +43,7 @@ export default function CreateGroupModal({ onClose, creatorId, onSuccess }: { on
             }
 
             const group = await res.json();
+            saveRoomKey(group.id, exportedKey);
             const hashKey = encodeURIComponent(exportedKey);
             const link = `${window.location.origin}/chat/${group.id}#key=${hashKey}`;
             setShareLink(link);
@@ -64,110 +66,127 @@ export default function CreateGroupModal({ onClose, creatorId, onSuccess }: { on
         }
     };
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <Card className="w-full max-w-md relative overflow-hidden rounded-[2rem] bg-card border border-border shadow-2xl animate-in zoom-in-95 duration-300">
+    const inputCls =
+        'h-12 rounded-full border-border bg-background/60 px-5 text-foreground placeholder:text-muted-foreground focus-visible:ring-foreground/30 disabled:opacity-60';
 
-                <CardHeader className="flex flex-row items-center justify-between relative z-10 pb-2">
-                    <CardTitle className="text-xl font-bold tracking-tight flex items-center gap-2">
-                        <Sparkles className="w-5 h-5 text-foreground" />
-                        <span className="text-foreground">New Group</span>
-                    </CardTitle>
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-md animate-in fade-in duration-200">
+            <div className="relative w-full max-w-md overflow-hidden rounded-[2rem] border border-border bg-card p-7 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.5)] animate-in zoom-in-95 duration-300 sm:p-8">
+                <div
+                    className="pointer-events-none absolute inset-0 opacity-[0.04]"
+                    style={{
+                        backgroundImage: 'linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)',
+                        backgroundSize: '32px 32px',
+                    }}
+                />
+
+                <div className="relative mb-7 flex items-start justify-between">
+                    <div>
+                        <div className="mb-3 flex w-fit items-center gap-2 rounded-full border border-border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                            <Lock className="h-3 w-3" /> {shareLink ? 'Room ready' : 'Encrypted room'}
+                        </div>
+                        <h2 className="text-3xl font-bold leading-none tracking-tighter text-foreground">
+                            {shareLink ? 'Share the link.' : 'New group'}
+                        </h2>
+                    </div>
                     <Button
                         variant="ghost"
                         size="icon"
                         onClick={onClose}
                         disabled={isLoading}
-                        className="rounded-full hover:bg-muted text-foreground transition-colors h-10 w-10"
+                        aria-label="Close"
+                        className="h-10 w-10 rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
                     >
                         <X className="h-5 w-5" />
                     </Button>
-                </CardHeader>
+                </div>
 
-                <CardContent className="relative z-10">
-                    <form onSubmit={handleCreate} className="space-y-5">
-                        <div className="space-y-10">
-                            <label className="text-sm font-medium text-foreground ml-1">
-                                Group Name
-                            </label>
-                            <Input
-                                placeholder="e.g. Late Night Yapping"
-                                value={name}
-                                onChange={e => setName(e.target.value)}
-                                maxLength={30}
-                                required
-                                disabled={!!shareLink}
-                                className="rounded-2xl bg-muted/50 border-input text-foreground placeholder:text-muted-foreground focus:bg-background focus:border-foreground transition-all duration-300 backdrop-blur-sm h-12"
-                            />
-                        </div>
+                <form onSubmit={handleCreate} className="relative space-y-5">
+                    <div className="space-y-2">
+                        <label className="ml-2 font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+                            Group name
+                        </label>
+                        <Input
+                            placeholder="e.g. Late Night Yapping"
+                            value={name}
+                            onChange={e => setName(e.target.value)}
+                            maxLength={30}
+                            required
+                            autoFocus
+                            disabled={!!shareLink}
+                            className={inputCls}
+                        />
+                    </div>
 
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-foreground ml-1 mb-20">
-                                Tags <span className="text-xs font-normal text-muted-foreground">(comma separated)</span>
-                            </label>
-                            <Input
-                                placeholder="fun, random, chill"
-                                value={tags}
-                                onChange={e => setTags(e.target.value)}
-                                disabled={!!shareLink}
-                                className="rounded-2xl bg-muted/50 border-input text-foreground placeholder:text-muted-foreground focus:bg-background focus:border-foreground transition-all duration-300 backdrop-blur-sm h-12"
-                            />
-                        </div>
+                    <div className="space-y-2">
+                        <label className="ml-2 font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+                            Tags <span className="normal-case tracking-normal opacity-70">(comma separated)</span>
+                        </label>
+                        <Input
+                            placeholder="fun, random, chill"
+                            value={tags}
+                            onChange={e => setTags(e.target.value)}
+                            disabled={!!shareLink}
+                            className={inputCls}
+                        />
+                    </div>
 
-                        {shareLink && (
-                            <div className="space-y-3 rounded-2xl border border-border bg-secondary/40 p-4">
-                                <div className="text-sm font-semibold text-foreground">Share group link</div>
-                                <div className="flex gap-2">
-                                    <Input
-                                        value={shareLink}
-                                        readOnly
-                                        className="rounded-xl bg-background/80 border-input text-foreground h-10"
-                                    />
-                                    <Button
-                                        type="button"
-                                        variant="secondary"
-                                        onClick={handleCopyLink}
-                                        className="rounded-xl px-4 h-10"
-                                    >
-                                        {copied ? 'Copied' : 'Copy'}
-                                    </Button>
-                                </div>
+                    {shareLink && (
+                        <div className="space-y-3 rounded-2xl border border-border bg-background/60 p-4 animate-in slide-in-from-bottom-2 fade-in duration-300">
+                            <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+                                Invite link
+                            </div>
+                            <div className="flex gap-2">
+                                <Input
+                                    value={shareLink}
+                                    readOnly
+                                    onFocus={e => e.currentTarget.select()}
+                                    className="h-10 rounded-full border-border bg-card px-4 font-mono text-xs text-foreground"
+                                />
                                 <Button
                                     type="button"
-                                    onClick={() => router.push(shareLink.replace(window.location.origin, ''))}
-                                    className="w-full rounded-xl h-11"
+                                    variant="outline"
+                                    onClick={handleCopyLink}
+                                    className="h-10 shrink-0 rounded-full border-border px-4 hover:border-foreground/40"
                                 >
-                                    Open Group
+                                    {copied ? <Check className="mr-1.5 h-4 w-4" /> : <Copy className="mr-1.5 h-4 w-4" />}
+                                    {copied ? 'Copied' : 'Copy'}
                                 </Button>
                             </div>
-                        )}
-
-                        <div className="pt-4 flex justify-end gap-3">
                             <Button
                                 type="button"
-                                variant="outline"
-                                onClick={onClose}
-                                disabled={isLoading}
-                                className="rounded-full px-6 border-border hover:bg-muted transition-all duration-300 h-12"
+                                onClick={() => router.push(shareLink.replace(window.location.origin, ''))}
+                                className="group h-11 w-full rounded-full bg-foreground font-bold text-background hover:bg-foreground/90"
                             >
-                                Cancel
-                            </Button>
-                            <Button
-                                type="submit"
-                                disabled={isLoading || !!shareLink}
-                                className="rounded-full px-8 bg-foreground hover:bg-foreground/90 text-background font-bold transition-all duration-300 hover:scale-105 disabled:opacity-50 shadow-lg h-12"
-                            >
-                                {isLoading ? (
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                ) : (
-                                    <Plus className="mr-2 h-4 w-4" />
-                                )}
-                                Create
+                                Open group
+                                <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
                             </Button>
                         </div>
-                    </form>
-                </CardContent>
-            </Card>
+                    )}
+
+                    <div className="flex justify-end gap-3 pt-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={onClose}
+                            disabled={isLoading}
+                            className="h-12 rounded-full border-border px-6 hover:border-foreground/40"
+                        >
+                            {shareLink ? 'Done' : 'Cancel'}
+                        </Button>
+                        {!shareLink && (
+                            <Button
+                                type="submit"
+                                disabled={isLoading || !name.trim()}
+                                className="h-12 rounded-full bg-foreground px-8 font-bold text-background transition-transform hover:scale-[1.03] hover:bg-foreground active:scale-95 disabled:opacity-50"
+                            >
+                                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                Create
+                            </Button>
+                        )}
+                    </div>
+                </form>
+            </div>
         </div>
     );
 }

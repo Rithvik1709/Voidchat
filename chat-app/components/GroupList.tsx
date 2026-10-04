@@ -7,6 +7,7 @@ import { motion } from 'framer-motion';
 import { ArrowLeft, ArrowRight, Check, Link2, Plus, Search, Timer, Users } from 'lucide-react';
 import CreateGroupModal from './CreateGroupModal';
 import ModeToggle from './ModeToggle';
+import { loadRoomKey, pruneRoomKeys } from '@/lib/roomAuth';
 
 interface Group {
     id: string;
@@ -41,7 +42,10 @@ export default function GroupList() {
             const res = await fetch(`/api/groups?creator_id=${encodeURIComponent(creatorId)}`);
             if (res.ok) {
                 const data = await res.json();
-                setGroups(data);
+                if (Array.isArray(data)) {
+                    setGroups(data);
+                    pruneRoomKeys(data.map((g: Group) => g.id));
+                }
             }
         } catch (err) {
             console.error(err);
@@ -50,26 +54,15 @@ export default function GroupList() {
         }
     };
 
-    const cleanupEmptyGroups = async () => {
-        try {
-            await fetch('/api/groups/cleanup', { method: 'DELETE' });
-        } catch (err) {
-            console.error('Cleanup error:', err);
-        }
-    };
-
     useEffect(() => {
         if (!creatorId) return;
         
         fetchGroups();
-        cleanupEmptyGroups();
 
         const fetchInterval = setInterval(fetchGroups, 5000);
-        const cleanupInterval = setInterval(cleanupEmptyGroups, 60000);
 
         return () => {
             clearInterval(fetchInterval);
-            clearInterval(cleanupInterval);
         };
     }, [creatorId]);
 
@@ -312,7 +305,7 @@ export default function GroupList() {
                                                             asChild
                                                             className="group/btn h-12 w-full rounded-full bg-foreground font-bold text-background transition-transform hover:scale-[1.02] hover:bg-foreground active:scale-95"
                                                         >
-                                                            <Link href={`/chat/${group.id}#key=${encodeURIComponent(group.key || '')}`}>
+                                                            <Link href={`/chat/${group.id}#key=${encodeURIComponent(loadRoomKey(group.id) || group.key || '')}`}>
                                                                 <span className="hidden sm:inline">Join Conversation</span>
                                                                 <span className="sm:hidden">Join</span>
                                                                 <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover/btn:translate-x-1" />

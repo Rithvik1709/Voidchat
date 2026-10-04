@@ -1,54 +1,33 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { deleteGroupAndMedia, extractProof, getGroup, isUuid, verifyRoomProof } from '@/lib/server/groups';
 
-const BUCKET_NAME = 'chat-images';
-
-// DELETE /api/groups/:groupId/end - End session and delete group
+// DELETE /api/groups/:groupId/end - End the session: delete the room and all of its media.
 export async function DELETE(
-    _request: Request,
+    request: Request,
     props: { params: Promise<{ groupId: string }> }
 ) {
     try {
-        const params = await props.params;
+        const { groupId } = await props.params;
 
-        // Delete all images for this group from Supabase Storage
-        try {
-            const { data: files, error: listError } = await supabase.storage
-                .from(BUCKET_NAME)
-                .list(params.groupId);
-
-            if (!listError && files && files.length > 0) {
-                // Build array of file paths to delete
-                const filesToDelete = files.map(file => `${params.groupId}/${file.name}`);
-                
-                const { error: deleteError } = await supabase.storage
-                    .from(BUCKET_NAME)
-                    .remove(filesToDelete);
-
-                if (deleteError) {
-                    console.error('Failed to delete images:', deleteError);
-                    // Continue anyway - don't fail the group deletion
-                }
-            }
-        } catch (storageErr) {
-            console.error('Storage cleanup error:', storageErr);
-            // Continue anyway - don't fail the group deletion
+        if (!isUuid(groupId)) {
+            return NextResponse.json({ error: 'Invalid group' }, { status: 400 });
         }
 
-        // Delete the group from database
-        const { error } = await supabase
-            .from('groups')
-            .delete()
-            .eq('id', params.groupId);
+        const group = await getGroup(groupId);
 
-        if (error) {
-            console.error('End session delete failed:', error);
-            return NextResponse.json({ error: 'Failed to delete group' }, { status: 500 });
+        // Already gone (for example the last person left): ending it again is a no-op.
+        if (!group) {
+            return NextResponse.json({ success: true, alreadyEnded: true });
         }
 
+        if (!verifyRoomProof(group, extractProof(request))) {
+            return NextResponse.json({ error: 'Not allowed to end this session.' }, { status: 403 });
+        }
+
+        await deleteGroupAndMedia(groupId);
         return NextResponse.json({ success: true });
     } catch (err) {
         console.error('End session error:', err);
-        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+        return NextResponse.json({ error: 'Failed to end the session' }, { status: 500 });
     }
 }

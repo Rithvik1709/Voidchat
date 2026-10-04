@@ -5,6 +5,9 @@ import { Button } from './ui/basic';
 import { Mic, Square, X, Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+// Long recordings do not fit in a single encrypted realtime message, so recording stops here.
+export const MAX_RECORDING_SECONDS = 30;
+
 interface AudioRecorderProps {
     onSend: (audioBlob: Blob) => void;
     onCancel: () => void;
@@ -20,17 +23,14 @@ export default function AudioRecorder({ onSend, onCancel, username }: AudioRecor
     const chunksRef = useRef<Blob[]>([]);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
-
-    useEffect(() => {
-        startRecording();
-        return () => {
-            cleanup();
-        };
-    }, []);
+    const autoStopRef = useRef<NodeJS.Timeout | null>(null);
 
     const cleanup = () => {
         if (timerRef.current) {
             clearInterval(timerRef.current);
+        }
+        if (autoStopRef.current) {
+            clearTimeout(autoStopRef.current);
         }
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(track => track.stop());
@@ -46,7 +46,8 @@ export default function AudioRecorder({ onSend, onCancel, username }: AudioRecor
             streamRef.current = stream;
 
             const mediaRecorder = new MediaRecorder(stream, {
-                mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4'
+                mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4',
+                audioBitsPerSecond: 24000
             });
             mediaRecorderRef.current = mediaRecorder;
 
@@ -75,6 +76,15 @@ export default function AudioRecorder({ onSend, onCancel, username }: AudioRecor
             timerRef.current = setInterval(() => {
                 setRecordingTime(prev => prev + 1);
             }, 1000);
+
+            // Hard stop at the limit
+            autoStopRef.current = setTimeout(() => {
+                if (mediaRecorder.state === 'recording') {
+                    mediaRecorder.stop();
+                    setIsRecording(false);
+                    if (timerRef.current) clearInterval(timerRef.current);
+                }
+            }, MAX_RECORDING_SECONDS * 1000);
         } catch (error) {
             console.error('Error accessing microphone:', error);
             alert('Could not access microphone. Please check permissions.');
@@ -82,12 +92,23 @@ export default function AudioRecorder({ onSend, onCancel, username }: AudioRecor
         }
     };
 
+    useEffect(() => {
+        startRecording();
+        return () => {
+            cleanup();
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const stopRecording = () => {
         if (mediaRecorderRef.current && isRecording) {
             mediaRecorderRef.current.stop();
             setIsRecording(false);
             if (timerRef.current) {
                 clearInterval(timerRef.current);
+            }
+            if (autoStopRef.current) {
+                clearTimeout(autoStopRef.current);
             }
         }
     };
@@ -134,6 +155,7 @@ export default function AudioRecorder({ onSend, onCancel, username }: AudioRecor
                         )} />
                         <span className="text-2xl font-mono tabular-nums">
                             {formatTime(recordingTime)}
+                            <span className="text-sm text-muted-foreground"> / {formatTime(MAX_RECORDING_SECONDS)}</span>
                         </span>
                     </div>
 
@@ -145,7 +167,7 @@ export default function AudioRecorder({ onSend, onCancel, username }: AudioRecor
                                     key={i}
                                     className="w-1 bg-primary rounded-full animate-pulse"
                                     style={{
-                                        height: `${Math.random() * 100}%`,
+                                        height: `${25 + ((i * 37) % 70)}%`,
                                         animationDelay: `${i * 0.1}s`,
                                         animationDuration: '0.5s'
                                     }}

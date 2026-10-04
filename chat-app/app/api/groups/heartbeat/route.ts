@@ -1,22 +1,32 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/server/supabaseAdmin';
+import { extractProof, getGroup, isUuid, verifyRoomProof } from '@/lib/server/groups';
 
 export async function POST(request: Request) {
     try {
-        const { groupId } = await request.json();
+        const body = await request.json().catch(() => ({}));
+        const groupId = body?.groupId;
 
-        if (!groupId) {
+        if (!isUuid(groupId)) {
             return NextResponse.json({ error: 'Missing groupId' }, { status: 400 });
         }
 
-        const { error } = await supabase
+        const group = await getGroup(groupId);
+        if (!group) {
+            return NextResponse.json({ success: true, ended: true });
+        }
+
+        if (!verifyRoomProof(group, extractProof(request, body))) {
+            return NextResponse.json({ error: 'Not allowed' }, { status: 403 });
+        }
+
+        const { error } = await supabaseAdmin
             .from('groups')
             .update({ last_active_at: new Date().toISOString() })
             .eq('id', groupId);
 
         if (error) {
             console.error('Heartbeat update failed:', error);
-            // Don't fail the request significantly if it's just a heartbeat
             return NextResponse.json({ error: error.message }, { status: 500 });
         }
 

@@ -3,8 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Button, Card, CardHeader, CardContent, CardTitle } from '@/components/ui/basic';
-import { Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/basic';
+import { GridBackground, Logo } from '@/components/SiteChrome';
+import ModeToggle from '@/components/ModeToggle';
+import { Trash2, Users, Eye, Layers, LogOut } from 'lucide-react';
 
 interface Group {
     id: string;
@@ -82,67 +84,98 @@ export default function AdminDashboard() {
     };
 
     if (loading) {
-        return <div className="flex justify-center items-center min-h-screen">Loading...</div>;
+        return (
+            <div className="grid min-h-screen place-items-center bg-background text-foreground">
+                <div className="flex items-center gap-3 font-mono text-xs uppercase tracking-[0.25em] text-muted-foreground">
+                    <span className="h-2 w-2 animate-ping rounded-full bg-foreground" />
+                    Loading dashboard
+                </div>
+            </div>
+        );
     }
 
+    const totalOnline = groups.reduce((n, g) => n + (g.active_user_count || 0), 0);
+    const stats = [
+        { label: 'Unique visitors', value: visitCount, icon: Eye },
+        { label: 'Active groups', value: groups.length, icon: Layers },
+        { label: 'Users online', value: totalOnline, icon: Users },
+    ];
+
     return (
-        <div className="container mx-auto p-6 max-w-4xl">
-            <div className="flex justify-between items-center mb-8">
-                <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-                <Button onClick={handleLogout} variant="outline">Logout</Button>
-            </div>
+        <div className="relative min-h-screen bg-background text-foreground">
+            <GridBackground />
+            <header className="sticky top-0 z-30 border-b border-border/60 bg-background/70 backdrop-blur-xl">
+                <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3.5 sm:px-6">
+                    <div className="flex items-center gap-4">
+                        <Logo />
+                        <span className="hidden rounded-full border border-border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground sm:block">
+                            Admin
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <ModeToggle className="h-10 w-10 border-border bg-transparent text-foreground hover:border-foreground/40" />
+                        <Button onClick={handleLogout} variant="outline" className="rounded-full border-border bg-transparent hover:border-foreground/40">
+                            <LogOut className="mr-2 h-4 w-4" /> Logout
+                        </Button>
+                    </div>
+                </div>
+            </header>
 
-            <div className="grid gap-6 md:grid-cols-2 mb-8">
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Unique Visitors</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <p className="text-4xl font-bold">{visitCount}</p>
-                    </CardContent>
-                </Card>
+            <main className="relative z-10 mx-auto max-w-5xl px-4 pb-24 pt-12 sm:px-6">
+                <h1 className="mb-10 text-4xl font-bold leading-[0.95] tracking-tighter md:text-6xl">
+                    Dashboard
+                </h1>
 
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Active Groups</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <p className="text-4xl font-bold">{groups.length}</p>
-                    </CardContent>
-                </Card>
-            </div>
+                <div className="mb-10 grid gap-4 sm:grid-cols-3">
+                    {stats.map((st) => (
+                        <div key={st.label} className="group relative overflow-hidden rounded-3xl border border-border bg-card/60 p-6 transition-colors hover:border-foreground/40">
+                            <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-foreground/5 transition-transform duration-700 group-hover:scale-[2.5]" />
+                            <div className="relative mb-8 grid h-10 w-10 place-items-center rounded-xl bg-foreground text-background">
+                                <st.icon className="h-4 w-4" />
+                            </div>
+                            <div className="relative text-5xl font-bold tracking-tighter">{st.value}</div>
+                            <div className="relative mt-2 font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+                                {st.label}
+                            </div>
+                        </div>
+                    ))}
+                </div>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle>Manage Groups</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div className="space-y-4">
-                        {groups.length === 0 ? (
-                            <p className="text-muted-foreground">No active groups.</p>
-                        ) : (
-                            groups.map((group) => (
-                                <div key={group.id} className="flex justify-between items-center p-4 border rounded-lg hover:bg-muted/50 transition">
-                                    <div>
-                                        <h3 className="font-semibold">{group.name}</h3>
-                                        <p className="text-sm text-muted-foreground">
-                                            Created: {new Date(group.created_at).toLocaleDateString()}
+                <div className="mb-4 flex items-center justify-between">
+                    <h2 className="text-xl font-bold tracking-tight">Manage groups</h2>
+                    <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+                        {groups.length} total
+                    </span>
+                </div>
+
+                <div className="overflow-hidden rounded-3xl border border-border bg-card/60">
+                    {groups.length === 0 ? (
+                        <p className="py-16 text-center text-muted-foreground">No active groups.</p>
+                    ) : (
+                        <ul className="divide-y divide-border">
+                            {groups.map((group) => (
+                                <li key={group.id} className="flex items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-accent/50 sm:px-6">
+                                    <div className="min-w-0">
+                                        <h3 className="truncate font-semibold tracking-tight">{group.name}</h3>
+                                        <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                                            {new Date(group.created_at).toLocaleDateString()} · {group.active_user_count || 0} online
                                         </p>
                                     </div>
                                     <Button
-                                        variant="destructive"
+                                        variant="outline"
                                         size="icon"
                                         onClick={() => handleDeleteGroup(group.id)}
                                         title="Delete Group"
+                                        className="shrink-0 rounded-full border-border bg-transparent text-muted-foreground hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive"
                                     >
                                         <Trash2 className="h-4 w-4" />
                                     </Button>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </CardContent>
-            </Card>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+            </main>
         </div>
     );
 }
