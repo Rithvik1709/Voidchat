@@ -270,3 +270,25 @@ describe('before the migration is run', () => {
     expect((await r.res.json()).error).toMatch(/invites\.sql/);
   });
 });
+
+describe('without the service-role key', () => {
+  it('says exactly what is missing instead of failing mysteriously', async () => {
+    const db = await getDb();
+    const room = await seedRoom();
+    db.serviceRole = false;
+
+    const made = await makeInvite(room.id);
+    expect(made.res.status).toBe(503);
+    expect((await made.res.json()).error).toMatch(/SUPABASE_SERVICE_ROLE_KEY/);
+
+    const listed = await listInvites(jsonRequest(`/api/groups/${room.id}/invites`, 'GET', undefined, asMember()), params(room.id));
+    expect(listed.status).toBe(503);
+
+    const claimed = await claimAs(room.id, newInviteToken());
+    expect(claimed.res.status).toBe(503);
+    expect((await claimed.res.json()).error).toMatch(/SUPABASE_SERVICE_ROLE_KEY/);
+
+    const polled = await poll(crypto.randomUUID(), 'a'.repeat(64));
+    expect(polled.status).toBe(503);
+  });
+});

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/server/supabaseAdmin';
+import { hasServiceRole, supabaseAdmin } from '@/lib/server/supabaseAdmin';
 import { extractProof, getLiveGroup, isUuid, verifyRoomProof } from '@/lib/server/groups';
-import { MIGRATION_MESSAGE, STALE_CLAIM_MS, isMissingTable } from '@/lib/server/invites';
+import { MIGRATION_MESSAGE, STALE_CLAIM_MS, isMissingTable, SERVICE_KEY_MESSAGE } from '@/lib/server/invites';
 import { sanitizeDelivery } from '@/lib/invites';
 
 // POST /api/groups/:id/invites/:inviteId/deliver: the inviter hands over the room key, encrypted
@@ -11,6 +11,7 @@ export async function POST(
     props: { params: Promise<{ groupId: string; inviteId: string }> }
 ) {
     try {
+        if (!hasServiceRole) return NextResponse.json({ error: SERVICE_KEY_MESSAGE }, { status: 503 });
         const { groupId, inviteId } = await props.params;
         const body = await request.json().catch(() => ({}));
         if (!isUuid(groupId) || !isUuid(inviteId)) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });

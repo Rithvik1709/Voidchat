@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/server/supabaseAdmin';
+import { hasServiceRole, supabaseAdmin } from '@/lib/server/supabaseAdmin';
 import { extractProof, getLiveGroup, isUuid, verifyRoomProof } from '@/lib/server/groups';
-import { MIGRATION_MESSAGE, isMissingTable } from '@/lib/server/invites';
+import { MIGRATION_MESSAGE, isMissingTable, SERVICE_KEY_MESSAGE } from '@/lib/server/invites';
 
 // DELETE /api/groups/:id/invites/:inviteId: revoke an invite that has not been used yet.
 export async function DELETE(
@@ -9,6 +9,7 @@ export async function DELETE(
     props: { params: Promise<{ groupId: string; inviteId: string }> }
 ) {
     try {
+        if (!hasServiceRole) return NextResponse.json({ error: SERVICE_KEY_MESSAGE }, { status: 503 });
         const { groupId, inviteId } = await props.params;
         if (!isUuid(groupId) || !isUuid(inviteId)) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
 

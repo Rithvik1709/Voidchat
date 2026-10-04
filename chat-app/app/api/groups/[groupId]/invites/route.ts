@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/server/supabaseAdmin';
+import { hasServiceRole, supabaseAdmin } from '@/lib/server/supabaseAdmin';
 import { extractProof, getLiveGroup, isUuid, verifyRoomProof } from '@/lib/server/groups';
 import {
-    INVITE_TTL_MS, MAX_ACTIVE_INVITES, MIGRATION_MESSAGE, effectiveStatus, isExpiredInvite, isMissingTable, type InviteRow,
-} from '@/lib/server/invites';
+    INVITE_TTL_MS, MAX_ACTIVE_INVITES, MIGRATION_MESSAGE, effectiveStatus, isExpiredInvite, isMissingTable, type InviteRow, SERVICE_KEY_MESSAGE } from '@/lib/server/invites';
 import { isHex64 } from '@/lib/invites';
 
 type Props = { params: Promise<{ groupId: string }> };
@@ -12,6 +11,7 @@ type Props = { params: Promise<{ groupId: string }> };
 // receives a hash of the link's token.
 export async function POST(request: Request, props: Props) {
     try {
+        if (!hasServiceRole) return NextResponse.json({ error: SERVICE_KEY_MESSAGE }, { status: 503 });
         const { groupId } = await props.params;
         const body = await request.json().catch(() => ({}));
 
@@ -61,6 +61,7 @@ export async function POST(request: Request, props: Props) {
 // GET /api/groups/:id/invites: a member lists open invites and any claims waiting for the room key.
 export async function GET(request: Request, props: Props) {
     try {
+        if (!hasServiceRole) return NextResponse.json({ error: SERVICE_KEY_MESSAGE }, { status: 503 });
         const { groupId } = await props.params;
         if (!isUuid(groupId)) return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
 

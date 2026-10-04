@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/server/supabaseAdmin';
+import { hasServiceRole, supabaseAdmin } from '@/lib/server/supabaseAdmin';
 import { getLiveGroup, isUuid } from '@/lib/server/groups';
 import {
-    INVITE_TTL_MS, MIGRATION_MESSAGE, STALE_CLAIM_MS, isExpiredInvite, isMissingTable, type InviteRow,
-} from '@/lib/server/invites';
+    INVITE_TTL_MS, MIGRATION_MESSAGE, STALE_CLAIM_MS, isExpiredInvite, isMissingTable, type InviteRow, SERVICE_KEY_MESSAGE } from '@/lib/server/invites';
 import { createLimiter } from '@/lib/server/rateLimit';
 import { isHex64 } from '@/lib/invites';
 import { sanitizePublicJwk } from '@/lib/signing';
@@ -14,6 +13,7 @@ const overLimit = createLimiter(20, 60_000);
 // burns: the server accepts exactly one claim and records who claimed (their public key).
 export async function POST(request: Request) {
     try {
+        if (!hasServiceRole) return NextResponse.json({ error: SERVICE_KEY_MESSAGE }, { status: 503 });
         if (overLimit(request)) {
             return NextResponse.json({ error: 'Too many attempts. Wait a minute and try again.' }, { status: 429 });
         }

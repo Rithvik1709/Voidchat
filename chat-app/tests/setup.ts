@@ -10,5 +10,5 @@ vi.mock('@/lib/server/supabaseAdmin', async () => {
   const { FakeSupabase } = await import('./helpers/fakeSupabase');
   const db = new FakeSupabase();
   db.reset();
-  return { supabaseAdmin: db, MEDIA_BUCKET: 'chat-images', hasServiceRole: true };
+  return { supabaseAdmin: db, MEDIA_BUCKET: 'chat-images', get hasServiceRole() { return db.serviceRole; } };
 });

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
+import { hasServiceRole } from '@/lib/server/supabaseAdmin';
 import { timingSafeEqual } from 'crypto';
-import { MIGRATION_MESSAGE, effectiveStatus, getInvite } from '@/lib/server/invites';
+import { MIGRATION_MESSAGE, effectiveStatus, getInvite, SERVICE_KEY_MESSAGE } from '@/lib/server/invites';
 import { createLimiter } from '@/lib/server/rateLimit';
 import { isHex64 } from '@/lib/invites';
 import { isUuid } from '@/lib/server/groups';
@@ -20,6 +21,7 @@ export async function GET(
     props: { params: Promise<{ inviteId: string }> }
 ) {
     try {
+        if (!hasServiceRole) return NextResponse.json({ error: SERVICE_KEY_MESSAGE }, { status: 503 });
         if (overLimit(request)) {
             return NextResponse.json({ error: 'Slow down.' }, { status: 429 });
         }

@@ -10,6 +10,12 @@ export const STALE_CLAIM_MS = 2 * 60 * 1000;
 /** Unused + waiting invites a room may have at once. */
 export const MAX_ACTIVE_INVITES = 25;
 
+/**
+ * The invites table has row-level security with no public policies, so only the service-role key
+ * can read or write it. Without that key the routes would fail in confusing ways, so say so plainly.
+ */
+export const SERVICE_KEY_MESSAGE = 'One-time invites need SUPABASE_SERVICE_ROLE_KEY to be set on the server (see .env.example).';
+
 export const MIGRATION_MESSAGE = 'One-time invites are not enabled yet: the database needs migrations/invites.sql.';
 
 export const isMissingTable = (error: { code?: string } | null | undefined) =>

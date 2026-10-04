@@ -135,6 +135,7 @@ export class FakeSupabase {
   missingColumns = new Set<string>();
   missingTables = new Set<string>();
   hasTryJoin = true;
+  serviceRole = true; // is SUPABASE_SERVICE_ROLE_KEY configured?
 
   reset() {
     this.tables = { groups: [], site_visits: [], group_invites: [] };
@@ -142,6 +143,7 @@ export class FakeSupabase {
     this.files = {};
     this.missingColumns = new Set();
     this.hasTryJoin = true;
+    this.serviceRole = true;
   }
 
   seedGroup(overrides: Row = {}): Row {
