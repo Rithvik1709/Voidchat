@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
+import { buildPageMetadata } from "@/lib/seo";
 import LegalPage, { type LegalSection } from "@/components/LegalPage";
 
-export const metadata: Metadata = {
-  title: "Terms of Use — Nullchat",
+export const metadata: Metadata = buildPageMetadata({
+  title: "Terms of Use",
   description:
     "Terms governing use of Nullchat, including acceptable use, room ownership, and limitations.",
-};
+  path: "/terms",
+});
 
 const sections: LegalSection[] = [
   {

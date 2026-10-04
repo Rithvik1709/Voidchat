@@ -1,25 +1,11 @@
 import type { Metadata } from "next";
+import { buildPageMetadata } from "@/lib/seo";
 import AboutPageContent from "@/components/AboutPageContent";
 
-export const metadata: Metadata = {
-    title: "About Nullchat — Private, Ephemeral Group Chat",
-    description:
-        "Nullchat is a privacy-first group chat where messages are ephemeral and identity is temporary. Create rooms, invite instantly, and stay anonymous.",
-    openGraph: {
-        title: "About Nullchat — Private, Ephemeral Group Chat",
-        description:
-            "Nullchat is a privacy-first group chat where messages are ephemeral and identity is temporary. Create rooms, invite instantly, and stay anonymous.",
-        url: "/about",
-        siteName: "Nullchat",
-        type: "website",
-    },
-    twitter: {
-        card: "summary",
-        title: "About Nullchat — Private, Ephemeral Group Chat",
-        description:
-            "Nullchat is a privacy-first group chat where messages are ephemeral and identity is temporary. Create rooms, invite instantly, and stay anonymous.",
-    },
-};
+const description =
+    "How Nullchat works: anonymous group rooms with no accounts, one-time invite links, burn mode, optional passwords and member limits, and nothing kept once a room ends.";
+
+export const metadata: Metadata = buildPageMetadata({ title: "About: private, ephemeral group chat", description, path: "/about" });
 
 export default function AboutPage() {
     return <AboutPageContent />;
