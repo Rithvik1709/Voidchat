@@ -5,6 +5,10 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { importKey, encryptMessage, decryptMessage } from '@/lib/crypto';
 import { getRoomProof } from '@/lib/roomAuth';
+import {
+    createSigner, importPublicKey, verifySignature, messageSigData, voteSigData, updatePins,
+    type Signer,
+} from '@/lib/signing';
 import { Button, Input, Card } from './ui/basic';
 import { Send, ArrowLeft, ArrowRight, Check, Loader2, Lock, Power, Reply, X, Users, Plus, Smile, Share2, BarChart3, Mic, Image as ImageIcon } from 'lucide-react';
 import AudioRecorder from './AudioRecorder';
@@ -188,6 +192,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
     const [sendError, setSendError] = useState('');
     const plusMenuRef = useRef<HTMLDivElement>(null);
     const proofRef = useRef('');
+    const signerRef = useRef<Promise<Signer> | null>(null);
     const usernameRef = useRef('');
     const messagesRef = useRef<Message[]>([]);
 
@@ -200,6 +205,9 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
 
     useEffect(() => { usernameRef.current = username; }, [username]);
     useEffect(() => { messagesRef.current = messages; }, [messages]);
+
+    // One signing key per tab, created on first use and kept only in memory
+    const getSigner = () => (signerRef.current ??= createSigner());
 
     const flashSendError = (message: string) => {
         setSendError(message);
@@ -297,59 +305,15 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
 
         channelRef.current = channel;
 
-        const handleMessage = async (payload: unknown) => {
-            try {
-                if (!isRecord(payload)) return;
-                const { id, sender, timestamp, encryptedPayload } = payload;
-                if (typeof id !== 'string' || !id || id.length > 64) return;
-                if (typeof sender !== 'string' || !sender || sender.length > MAX_NAME_LENGTH || sender === 'System') return;
-                if (typeof encryptedPayload !== 'string') return;
+        // ---- Sender verification -------------------------------------------------------------
+        // pins: which public key is trusted for each username (see lib/signing.ts)
+        let pins = new Map<string, string>();
+        let contested = new Set<string>();
+        const keyCache = new Map<string, CryptoKey>();
+        const lastNotice = new Map<string, number>();
+        const pending: { kind: 'message' | 'vote'; payload: unknown }[] = [];
+        const voteClock = new Map<string, number>();
 
-                const decryptedString = await decryptMessage(encryptedPayload, key);
-                let parsed: unknown;
-                try {
-                    parsed = JSON.parse(decryptedString);
-                } catch {
-                    return;
-                }
-
-                const content = sanitizeContent(parsed);
-                // The sender name is bound inside the encrypted payload, so it cannot be swapped on the envelope
-                if (!content || content.from !== sender) return;
-
-                const ts = typeof timestamp === 'string' && !Number.isNaN(Date.parse(timestamp)) ? timestamp : new Date().toISOString();
-
-                setMessages(prev => {
-                    if (prev.some(m => m.id === id)) return prev;
-                    return [...prev, { id, sender, timestamp: ts, content, encryptedPayload }];
-                });
-            } catch (err) {
-                console.error('Failed to decrypt message', err);
-            }
-        };
-
-        // A vote can only change that voter's own selections. It can never rewrite a message.
-        const handleVote = async (payload: unknown) => {
-            try {
-                if (!isRecord(payload) || typeof payload.messageId !== 'string' || typeof payload.encryptedPayload !== 'string') return;
-                const parsed: unknown = JSON.parse(await decryptMessage(payload.encryptedPayload, key));
-                if (!isRecord(parsed) || typeof parsed.voter !== 'string' || !Array.isArray(parsed.selections)) return;
-                const voter = parsed.voter.slice(0, MAX_NAME_LENGTH);
-                const selections = parsed.selections.filter((o): o is string => typeof o === 'string');
-                const messageId = payload.messageId;
-
-                setMessages(prev => prev.map(m =>
-                    m.id === messageId && m.content.poll
-                        ? { ...m, content: { ...m.content, poll: applyVote(m.content.poll, voter, selections) } }
-                        : m
-                ));
-            } catch (err) {
-                console.error('Vote decrypt failed', err);
-            }
-        };
-
-        // Presence "join" events also fire for everyone already in the room (and for yourself)
-        // while the first state sync arrives. Only announce people who arrive afterwards.
         let presenceReady = false;
         const announce = (text: string) =>
             setMessages(prev => [...prev, {
@@ -360,9 +324,155 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                 isSystem: true
             }]);
 
+        const noticeOnce = (name: string, text: string) => {
+            const now = Date.now();
+            if (now - (lastNotice.get(name) || 0) < 15000) return;
+            lastNotice.set(name, now);
+            announce(text);
+        };
+
+        type Check = 'ok' | 'wait' | 'bad';
+        const checkSender = async (sender: string, data: string, sig: unknown): Promise<Check> => {
+            // Nobody else can legitimately speak as me: my own messages are never echoed back
+            if (isJoined && sender === usernameRef.current) return 'bad';
+            if (contested.has(sender)) return 'bad';
+            const canon = pins.get(sender);
+            const pub = canon ? keyCache.get(canon) : undefined;
+            if (!pub) return 'wait'; // presence for this sender has not arrived yet
+            return typeof sig === 'string' && await verifySignature(pub, data, sig) ? 'ok' : 'bad';
+        };
+
+        const blocked = (sender: string) =>
+            noticeOnce(
+                sender,
+                isJoined && sender === usernameRef.current
+                    ? 'Blocked a message pretending to be you'
+                    : `Blocked a message pretending to be ${sender}`
+            );
+
+        const processMessage = async (payload: unknown): Promise<'done' | 'wait'> => {
+            try {
+                if (!isRecord(payload)) return 'done';
+                const { id, sender, timestamp, encryptedPayload, sig } = payload;
+                if (typeof id !== 'string' || !id || id.length > 64) return 'done';
+                if (typeof sender !== 'string' || !sender || sender.length > MAX_NAME_LENGTH || sender === 'System') return 'done';
+                if (typeof encryptedPayload !== 'string' || typeof timestamp !== 'string') return 'done';
+
+                const status = await checkSender(sender, messageSigData(groupId, { id, sender, timestamp, encryptedPayload }), sig);
+                if (status === 'wait') return 'wait';
+                if (status === 'bad') {
+                    blocked(sender);
+                    return 'done';
+                }
+
+                const decryptedString = await decryptMessage(encryptedPayload, key);
+                let parsed: unknown;
+                try {
+                    parsed = JSON.parse(decryptedString);
+                } catch {
+                    return 'done';
+                }
+
+                const content = sanitizeContent(parsed);
+                // The sender is signed on the envelope AND bound inside the encrypted payload
+                if (!content || content.from !== sender) return 'done';
+
+                const ts = !Number.isNaN(Date.parse(timestamp)) ? timestamp : new Date().toISOString();
+
+                setMessages(prev => {
+                    if (prev.some(m => m.id === id)) return prev;
+                    return [...prev, { id, sender, timestamp: ts, content, encryptedPayload }];
+                });
+            } catch (err) {
+                console.error('Failed to process message', err);
+            }
+            return 'done';
+        };
+
+        // A vote can only change that voter's own selections. It can never rewrite a message.
+        const processVote = async (payload: unknown): Promise<'done' | 'wait'> => {
+            try {
+                if (!isRecord(payload)) return 'done';
+                const { messageId, sender, encryptedPayload, sig } = payload;
+                if (typeof messageId !== 'string' || typeof encryptedPayload !== 'string') return 'done';
+                if (typeof sender !== 'string' || !sender || sender.length > MAX_NAME_LENGTH) return 'done';
+
+                const status = await checkSender(sender, voteSigData(groupId, { messageId, sender, encryptedPayload }), sig);
+                if (status === 'wait') return 'wait';
+                if (status === 'bad') {
+                    blocked(sender);
+                    return 'done';
+                }
+
+                const parsed: unknown = JSON.parse(await decryptMessage(encryptedPayload, key));
+                if (!isRecord(parsed) || parsed.voter !== sender || !Array.isArray(parsed.selections)) return 'done';
+                if (typeof parsed.ts !== 'number') return 'done';
+
+                // A replayed older vote must not undo a newer one
+                const clockKey = `${messageId}|${sender}`;
+                if (parsed.ts <= (voteClock.get(clockKey) ?? 0)) return 'done';
+                voteClock.set(clockKey, parsed.ts);
+
+                const selections = parsed.selections.filter((o): o is string => typeof o === 'string');
+                setMessages(prev => prev.map(m =>
+                    m.id === messageId && m.content.poll
+                        ? { ...m, content: { ...m.content, poll: applyVote(m.content.poll, sender, selections) } }
+                        : m
+                ));
+            } catch (err) {
+                console.error('Vote decrypt failed', err);
+            }
+            return 'done';
+        };
+
+        const handleIncoming = async (kind: 'message' | 'vote', payload: unknown) => {
+            const result = kind === 'message' ? await processMessage(payload) : await processVote(payload);
+            if (result === 'wait') {
+                // Their key may not have been announced yet; retry briefly, then give up quietly
+                const item = { kind, payload };
+                pending.push(item);
+                setTimeout(() => {
+                    const i = pending.indexOf(item);
+                    if (i !== -1) pending.splice(i, 1);
+                }, 5000);
+            }
+        };
+
+        const flushPending = async () => {
+            for (const item of [...pending]) {
+                const result = item.kind === 'message' ? await processMessage(item.payload) : await processVote(item.payload);
+                if (result === 'done') {
+                    const i = pending.indexOf(item);
+                    if (i !== -1) pending.splice(i, 1);
+                }
+            }
+        };
+
+        // Presence updates are applied one at a time so key imports can't interleave
+        let pinChain: Promise<void> = Promise.resolve();
+        const refreshPins = () => {
+            pinChain = pinChain.then(async () => {
+                const next = updatePins(pins, channel.presenceState() as unknown as Record<string, unknown[]>);
+                for (const [canon, jwk] of next.jwkByCanon) {
+                    if (keyCache.has(canon)) continue;
+                    const imported = await importPublicKey(jwk);
+                    if (imported) keyCache.set(canon, imported);
+                }
+                const newlyContested = [...next.contested].filter(n => !contested.has(n));
+                pins = next.pins;
+                contested = next.contested;
+                if (presenceReady) {
+                    newlyContested.forEach(n => noticeOnce(n, `${n} is contested: two people use this name, so its messages are blocked`));
+                }
+                await flushPending();
+            }).catch(err => console.error('Pin update failed', err));
+        };
+
+        // Presence "join" events also fire for everyone already in the room (and for yourself)
+        // while the first state sync arrives. Only announce people who arrive afterwards.
         channel
-            .on('broadcast', { event: 'message' }, ({ payload }) => handleMessage(payload))
-            .on('broadcast', { event: 'vote' }, ({ payload }) => handleVote(payload))
+            .on('broadcast', { event: 'message' }, ({ payload }) => handleIncoming('message', payload))
+            .on('broadcast', { event: 'vote' }, ({ payload }) => handleIncoming('vote', payload))
             .on('broadcast', { event: 'clear' }, ({ payload }) => {
                 setMessages([]);
                 setReplyingTo(null);
@@ -374,6 +484,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                 const users = Object.keys(newState).filter(k => k && k !== 'undefined');
                 setParticipants(users);
                 setUserCount(users.length);
+                refreshPins();
                 presenceReady = true;
             })
             .on('presence', { event: 'join' }, ({ key: who }) => {
@@ -387,7 +498,13 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
             .subscribe(async (status) => {
                 if (status === 'SUBSCRIBED') {
                     if (isJoined && username) {
-                        await channel.track({ online_at: new Date().toISOString() });
+                        try {
+                            const signer = await getSigner();
+                            await channel.track({ online_at: new Date().toISOString(), pub: signer.publicJwk });
+                        } catch (err) {
+                            console.error('Could not announce signing key', err);
+                            setError('Your browser could not create a signing key, so you cannot join this room.');
+                        }
                     }
                 }
             });
@@ -543,7 +660,9 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
             timestamp: new Date().toISOString(),
             encryptedPayload
         };
-        await sendBroadcast('message', messageData);
+        const signer = await getSigner();
+        const sig = await signer.sign(messageSigData(groupId, messageData));
+        await sendBroadcast('message', { ...messageData, sig });
         setMessages(prev => [...prev, { ...messageData, content: bound }]);
     };
 
@@ -985,8 +1104,10 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
 
                                                                                 try {
                                                                                     // Only this voter's selections travel; nobody else's votes or the question can change
-                                                                                    const encryptedPayload = await encryptMessage(JSON.stringify({ voter: username, selections }), key!);
-                                                                                    await sendBroadcast('vote', { messageId: msg.id, encryptedPayload });
+                                                                                    const encryptedPayload = await encryptMessage(JSON.stringify({ voter: username, selections, ts: Date.now() }), key!);
+                                                                                    const signer = await getSigner();
+                                                                                    const sig = await signer.sign(voteSigData(groupId, { messageId: msg.id, sender: username, encryptedPayload }));
+                                                                                    await sendBroadcast('vote', { messageId: msg.id, sender: username, encryptedPayload, sig });
                                                                                     setMessages(prev => prev.map(m =>
                                                                                         m.id === msg.id && m.content.poll
                                                                                             ? { ...m, content: { ...m.content, poll: applyVote(m.content.poll, username, selections) } }
