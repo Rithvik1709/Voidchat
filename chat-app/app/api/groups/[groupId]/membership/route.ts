@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/server/supabaseAdmin';
-import { deleteGroupAndMedia, extractProof, getGroup, isUuid, maybeSweep, verifyRoomProof } from '@/lib/server/groups';
+import { deleteGroupAndMedia, extractProof, getGroup, getLiveGroup, isUuid, maybeSweep, verifyRoomProof } from '@/lib/server/groups';
 
 // Handle Join/Leave actions. The proof travels in the body so navigator.sendBeacon can use it.
 export async function POST(
@@ -16,9 +16,9 @@ export async function POST(
             return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
         }
 
-        const group = await getGroup(groupId);
+        // An expired room is deleted on the spot and reported as ended
+        const group = await getLiveGroup(groupId);
         if (!group) {
-            // Room already ended; nothing to update.
             return NextResponse.json({ success: true, ended: true });
         }
 
@@ -27,17 +27,33 @@ export async function POST(
         }
 
         if (action === 'join') {
-            const { error } = await supabaseAdmin.rpc('increment_active_users', { group_id: groupId });
+            const limit = group.max_members ?? null;
 
-            if (error) {
-                console.error('RPC increment failed, falling back manually:', error);
-                await supabaseAdmin
-                    .from('groups')
-                    .update({
-                        active_user_count: (group.active_user_count || 0) + 1,
-                        last_active_at: new Date().toISOString(),
-                    })
-                    .eq('id', groupId);
+            if (limit !== null && (group.active_user_count ?? 0) >= limit) {
+                return NextResponse.json({ error: 'This room is full.', full: true }, { status: 409 });
+            }
+
+            // Atomic: only takes a seat while one is free (needs migrations/room_options.sql)
+            const { data: joined, error: joinError } = await supabaseAdmin.rpc('try_join_group', { group_id: groupId });
+
+            if (!joinError) {
+                if (joined === false) {
+                    return NextResponse.json({ error: 'This room is full.', full: true }, { status: 409 });
+                }
+            } else {
+                // Function not installed yet: fall back to the plain counter
+                const { error } = await supabaseAdmin.rpc('increment_active_users', { group_id: groupId });
+
+                if (error) {
+                    console.error('RPC increment failed, falling back manually:', error);
+                    await supabaseAdmin
+                        .from('groups')
+                        .update({
+                            active_user_count: (group.active_user_count || 0) + 1,
+                            last_active_at: new Date().toISOString(),
+                        })
+                        .eq('id', groupId);
+                }
             }
             maybeSweep();
         } else {

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button, Card, CardContent } from './ui/basic';
 import { motion } from 'framer-motion';
-import { ArrowLeft, ArrowRight, Check, Link2, Plus, Search, Timer, Users } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, KeyRound, Link2, Plus, Search, Timer, Users } from 'lucide-react';
 import CreateGroupModal from './CreateGroupModal';
 import ModeToggle from './ModeToggle';
 import { loadRoomKey, pruneRoomKeys } from '@/lib/roomAuth';
@@ -15,6 +15,9 @@ interface Group {
     tags: string[];
     active_user_count: number;
     key?: string;
+    expires_at?: string | null;
+    max_members?: number | null;
+    has_password?: boolean;
 }
 
 export default function GroupList() {
@@ -289,6 +292,21 @@ export default function GroupList() {
                                                         </div>
 
                                                         <div className="flex min-h-[2rem] flex-wrap gap-2">
+                                                            {group.has_password && (
+                                                                <span className="flex items-center gap-1 rounded-full bg-foreground px-2.5 py-1 font-mono text-[10px] uppercase tracking-wide text-background" title="Password protected">
+                                                                    <KeyRound className="h-3 w-3" /> Password
+                                                                </span>
+                                                            )}
+                                                            {group.expires_at && (
+                                                                <span className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wide text-muted-foreground" title="Closes automatically">
+                                                                    <Timer className="h-3 w-3" /> {new Date(group.expires_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                                </span>
+                                                            )}
+                                                            {group.max_members && (
+                                                                <span className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wide text-muted-foreground" title="Member limit">
+                                                                    <Users className="h-3 w-3" /> {group.active_user_count}/{group.max_members}
+                                                                </span>
+                                                            )}
                                                             {group.tags?.slice(0, 3).map((tag, i) => (
                                                                 <span
                                                                     key={i}

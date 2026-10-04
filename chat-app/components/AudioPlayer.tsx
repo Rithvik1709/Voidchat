@@ -32,9 +32,10 @@ export default function AudioPlayer({ audioData, sender, timestamp, isOwn }: Aud
             const byteArray = new Uint8Array(byteNumbers);
             const blob = new Blob([byteArray], { type: 'audio/webm' });
             const url = URL.createObjectURL(blob);
-            setAudioUrl(url);
+            const timer = setTimeout(() => setAudioUrl(url), 0);
 
             return () => {
+                clearTimeout(timer);
                 URL.revokeObjectURL(url);
             };
         } catch (error) {
@@ -206,7 +207,7 @@ export default function AudioPlayer({ audioData, sender, timestamp, isOwn }: Aud
                     // Create a more natural-looking waveform pattern
                     const seed = i + audioData.charCodeAt(i % audioData.length);
                     const baseHeight = 30 + (Math.sin(seed * 0.1) * 40);
-                    const height = Math.max(10, Math.min(100, baseHeight + Math.random() * 30));
+                    const height = Math.max(10, Math.min(100, baseHeight + ((seed * 37) % 30)));
                     const isPast = (i / 40) * 100 < progress;
                     
                     return (

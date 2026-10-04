@@ -4,13 +4,17 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { importKey, encryptMessage, decryptMessage } from '@/lib/crypto';
-import { getRoomProof } from '@/lib/roomAuth';
+import { deriveRoomKey, getRoomProof } from '@/lib/roomAuth';
+import { formatCountdown, type RoomOptions } from '@/lib/roomOptions';
+import RoomEnded from './RoomEnded';
+import RoomFull from './RoomFull';
+import QrCode from './QrCode';
 import {
     createSigner, importPublicKey, verifySignature, messageSigData, voteSigData, updatePins,
     type Signer,
 } from '@/lib/signing';
 import { Button, Input, Card } from './ui/basic';
-import { Send, ArrowLeft, ArrowRight, Check, Loader2, Lock, Power, Reply, X, Users, Plus, Smile, Share2, BarChart3, Mic, Image as ImageIcon } from 'lucide-react';
+import { Send, ArrowLeft, ArrowRight, Check, Loader2, Lock, Power, Reply, X, Users, Plus, Smile, Share2, BarChart3, Mic, Image as ImageIcon, KeyRound, QrCode as QrIcon, Timer } from 'lucide-react';
 import AudioRecorder from './AudioRecorder';
 import AudioPlayer from './AudioPlayer';
 import { cn } from '@/lib/utils';
@@ -18,29 +22,11 @@ import { motion, PanInfo } from "framer-motion";
 import ModeToggle from "./ModeToggle";
 import EmojiPickerPopover from './EmojiPicker';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-
-interface ReplyContext {
-    id: string;
-    sender: string;
-    text: string;
-}
-
-interface PollData {
-    question: string;
-    options: string[];
-    votes: { [option: string]: string[] }; // option -> array of usernames who voted
-    creator: string;
-    type: 'single' | 'multiple'; // single or multiple choice
-}
-
-interface MessageContent {
-    text: string;
-    replyTo?: ReplyContext;
-    poll?: PollData;
-    audio?: string; // base64 encoded audio data
-    image?: string; // URL to uploaded image
-    from?: string; // sender name, bound inside the encrypted payload
-}
+import {
+    MAX_AUDIO_SEND_B64, MAX_NAME_LENGTH, MAX_TEXT_LENGTH,
+    applyVote, escapeRegExp, isRecord, newId, sanitizeContent,
+    type MessageContent, type PollData,
+} from '@/lib/chatSafety';
 
 interface Message {
     id: string;
@@ -67,101 +53,15 @@ const getAvatarColor = (name: string) => {
     return shades[Math.abs(hash) % shades.length];
 };
 
-// ---------------------------------------------------------------------------
-// Input hardening: everything that arrives over the room channel is untrusted.
-// ---------------------------------------------------------------------------
-const MAX_TEXT_LENGTH = 4000;
-const MAX_NAME_LENGTH = 15;
-const MAX_AUDIO_RECEIVE_B64 = 400_000;
-const MAX_AUDIO_SEND_B64 = 160_000; // keeps the encrypted broadcast under realtime payload limits
-const MEDIA_URL_PREFIX = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/chat-images/`;
-
-const newId = () =>
-    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-    typeof v === 'object' && v !== null && !Array.isArray(v);
-
-const isMediaUrl = (v: unknown): v is string =>
-    typeof v === 'string' && v.startsWith(MEDIA_URL_PREFIX) && !/\s/.test(v) && v.length < 600;
-
-function sanitizePoll(raw: unknown): PollData | null {
-    if (!isRecord(raw)) return null;
-    const { question, options, votes, creator, type } = raw;
-    if (typeof question !== 'string' || !question || question.length > 200) return null;
-    if (!Array.isArray(options) || options.length < 2 || options.length > 10) return null;
-    if (!options.every(o => typeof o === 'string' && o.length > 0 && o.length <= 100)) return null;
-    const opts = Array.from(new Set(options as string[]));
-    if (opts.length < 2) return null;
-    if (type !== 'single' && type !== 'multiple') return null;
-
-    const safeVotes: PollData['votes'] = {};
-    const rawVotes = isRecord(votes) ? votes : {};
-    for (const o of opts) {
-        const v = rawVotes[o];
-        safeVotes[o] = Array.isArray(v)
-            ? Array.from(new Set(v.filter((u): u is string => typeof u === 'string' && u.length > 0 && u.length <= MAX_NAME_LENGTH))).slice(0, 200)
-            : [];
-    }
-    return {
-        question,
-        options: opts,
-        votes: safeVotes,
-        creator: typeof creator === 'string' ? creator.slice(0, MAX_NAME_LENGTH) : '',
-        type,
-    };
-}
-
-function sanitizeContent(raw: unknown): MessageContent | null {
-    if (!isRecord(raw)) return null;
-    if (typeof raw.text !== 'string' || raw.text.length > MAX_TEXT_LENGTH) return null;
-
-    const content: MessageContent = { text: raw.text };
-
-    if (typeof raw.from === 'string') content.from = raw.from;
-
-    if (isRecord(raw.replyTo)) {
-        const r = raw.replyTo;
-        if (typeof r.id === 'string' && typeof r.sender === 'string' && typeof r.text === 'string') {
-            content.replyTo = { id: r.id.slice(0, 64), sender: r.sender.slice(0, MAX_NAME_LENGTH), text: r.text.slice(0, 80) };
-        }
-    }
-    if (raw.poll !== undefined) {
-        const poll = sanitizePoll(raw.poll);
-        if (!poll) return null;
-        content.poll = poll;
-    }
-    if (typeof raw.audio === 'string' && raw.audio.length <= MAX_AUDIO_RECEIVE_B64 && /^[A-Za-z0-9+/=]+$/.test(raw.audio)) {
-        content.audio = raw.audio;
-    }
-    if (isMediaUrl(raw.image)) content.image = raw.image;
-
-    return content;
-}
-
-/** Apply one person's selections to a poll without touching anyone else's votes. */
-function applyVote(poll: PollData, voter: string, selections: string[]): PollData {
-    const chosen = new Set(selections.filter(o => poll.options.includes(o)));
-    const picked = poll.type === 'single' ? Array.from(chosen).slice(0, 1) : Array.from(chosen);
-    const votes: PollData['votes'] = {};
-    for (const o of poll.options) {
-        const others = (poll.votes[o] || []).filter(u => u !== voter);
-        votes[o] = picked.includes(o) ? [...others, voter] : others;
-    }
-    return { ...poll, votes };
-}
-
 const GRID_BG = {
     backgroundImage:
         'linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)',
     backgroundSize: '56px 56px',
 } as const;
 
-export default function ChatRoom({ groupId, groupName }: { groupId: string; groupName: string }) {
+const NO_OPTIONS: RoomOptions = { hasPassword: false, expiresAt: null, serverNow: '', maxMembers: null };
+
+export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: { groupId: string; groupName: string; options?: RoomOptions }) {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [username, setUsername] = useState('');
@@ -176,8 +76,15 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
     const [showEndConfirm, setShowEndConfirm] = useState(false);
     const [isEnding, setIsEnding] = useState(false);
     const [endError, setEndError] = useState('');
-    const [sessionEnded, setSessionEnded] = useState<{ by: string; self: boolean } | null>(null);
+    const [endedBySomeone, setSessionEnded] = useState<{ by: string; self: boolean } | null>(null);
     const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+    const [passwordInput, setPasswordInput] = useState('');
+    const [isJoining, setIsJoining] = useState(false);
+    const [roomFull, setRoomFull] = useState(false);
+    const [showQr, setShowQr] = useState(false);
+    const [nowMs, setNowMs] = useState(0);
+    const rawKeyRef = useRef('');
+    const serverOffsetRef = useRef(0);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
     const [shareCopied, setShareCopied] = useState(false);
@@ -202,6 +109,29 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
     const inputRef = useRef<HTMLInputElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
     const router = useRouter();
+
+    // ---- Auto-close timer ----------------------------------------------------------------
+    // Counts down against the SERVER clock (so a wrong device clock doesn't matter) and ends the
+    // room for everyone when it hits zero. The server also refuses expired rooms on its own.
+    const expiresAtMs = options.expiresAt ? Date.parse(options.expiresAt) : null;
+    useEffect(() => {
+        if (expiresAtMs === null) return;
+        serverOffsetRef.current = options.serverNow ? Date.parse(options.serverNow) - Date.now() : 0;
+        const tick = () => setNowMs(Date.now() + serverOffsetRef.current);
+        const first = setTimeout(tick, 0);
+        const id = setInterval(tick, 1000);
+        return () => { clearTimeout(first); clearInterval(id); };
+    }, [expiresAtMs, options.serverNow]);
+    const remainingMs = expiresAtMs !== null && nowMs ? expiresAtMs - nowMs : null;
+    const timerExpired = remainingMs !== null && remainingMs <= 0;
+    // The room is over when someone ended it, or its timer ran out while we were inside
+    const sessionEnded = endedBySomeone ?? (timerExpired && isJoined ? { by: 'timer', self: false } : null);
+    const hasEnded = sessionEnded !== null; // stable value for effect dependencies
+
+    useEffect(() => {
+        if (!timerExpired || !isJoined) return;
+        fetch(`/api/groups/${groupId}/end`, { method: 'DELETE', headers: { 'x-room-proof': proofRef.current } }).catch(() => undefined);
+    }, [timerExpired, isJoined, groupId]);
 
     useEffect(() => { usernameRef.current = username; }, [username]);
     useEffect(() => { messagesRef.current = messages; }, [messages]);
@@ -228,7 +158,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
 
     useEffect(() => {
         const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-            if (isJoined && !sessionEnded) {
+            if (isJoined && !hasEnded) {
                 e.preventDefault();
                 e.returnValue = ''; 
             }
@@ -236,14 +166,14 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
 
         window.addEventListener('beforeunload', handleBeforeUnload);
         return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-    }, [isJoined, sessionEnded]);
+    }, [isJoined, hasEnded]);
 
     // After a session ends, send everyone back to the group list
     useEffect(() => {
-        if (!sessionEnded) return;
+        if (!hasEnded) return;
         const t = setTimeout(() => router.push('/groups'), 4000);
         return () => clearTimeout(t);
-    }, [sessionEnded, router]);
+    }, [hasEnded, router]);
 
     useEffect(() => {
         if (replyingTo) {
@@ -280,7 +210,9 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
         const init = async () => {
             try {
                 const rawKey = decodeURIComponent(keyString);
-                const importedKey = await importKey(rawKey);
+                rawKeyRef.current = rawKey;
+                const importedKey = await importKey(rawKey); // also validates the link's key
+                if (options.hasPassword) return; // the real key is derived from the password at join
                 proofRef.current = await getRoomProof(rawKey);
                 setKey(importedKey);
             } catch (err) {
@@ -518,11 +450,13 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
 
         let heartbeatInterval: ReturnType<typeof setInterval> | undefined;
         let leftRoom = false;
+        let joinAccepted = false; // only a seat we were actually given needs giving back
+        let disposed = false;
 
         // Runs on unmount AND when the tab is closed / backgrounded for good (pagehide),
         // because React cleanup never runs when a tab is simply closed.
         const leaveRoom = () => {
-            if (!isJoined || leftRoom) return;
+            if (!isJoined || !joinAccepted || leftRoom) return;
             leftRoom = true;
             const data = JSON.stringify({ action: 'leave', proof: proofRef.current });
             const url = `/api/groups/${groupId}/membership`;
@@ -540,6 +474,25 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
 
         if (isJoined && username) {
             postJson(`/api/groups/${groupId}/membership`, { action: 'join' })
+                .then(async (res) => {
+                    if (res.status === 409) {
+                        setRoomFull(true);
+                        setIsJoined(false);
+                        return;
+                    }
+                    if (res.status === 403) {
+                        setError('You could not join this room. Check the link and the password.');
+                        setIsJoined(false);
+                        return;
+                    }
+                    const data = await res.json().catch(() => ({}));
+                    if (data?.ended) {
+                        setSessionEnded({ by: 'The room', self: false });
+                        return;
+                    }
+                    joinAccepted = true;
+                    if (disposed) leaveRoom(); // left before the server answered: give the seat back
+                })
                 .catch(e => console.error('Join failed', e));
 
             heartbeatInterval = setInterval(async () => {
@@ -556,6 +509,7 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
         }
 
         return () => {
+            disposed = true;
             if (heartbeatInterval) clearInterval(heartbeatInterval);
             window.removeEventListener('pagehide', leaveRoom);
             supabase.removeChannel(channel);
@@ -568,15 +522,52 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, replyingTo]);
 
-    const handleJoin = (e: React.FormEvent) => {
+    const handleJoin = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (isJoining) return;
         const trimmedName = username.trim();
         if (!trimmedName) return;
 
         if (participants.some(p => p.toLowerCase() === trimmedName.toLowerCase())) {
             setJoinError(`Username "${trimmedName}" is already taken.`);
-            setTimeout(() => setJoinError(''), 3000);  
+            setTimeout(() => setJoinError(''), 3000);
             return;
+        }
+
+        if (options.hasPassword) {
+            if (!passwordInput) {
+                setJoinError('Enter the room password.');
+                return;
+            }
+            setIsJoining(true);
+            try {
+                const proof = await getRoomProof(rawKeyRef.current, passwordInput);
+                const res = await fetch(`/api/groups/${groupId}/verify`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ proof })
+                });
+                if (res.status === 404) {
+                    setError('This room has ended.');
+                    return;
+                }
+                if (res.status === 429) {
+                    setJoinError('Too many attempts. Wait a minute and try again.');
+                    return;
+                }
+                if (!res.ok) {
+                    setJoinError('Wrong password.');
+                    return;
+                }
+                proofRef.current = proof;
+                setKey(await deriveRoomKey(rawKeyRef.current, passwordInput));
+            } catch (err) {
+                console.error(err);
+                setJoinError('Could not check the password. Try again.');
+                return;
+            } finally {
+                setIsJoining(false);
+            }
         }
 
         setIsJoined(true);
@@ -790,6 +781,15 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
         );
     }
 
+    if (roomFull) {
+        return <RoomFull limit={options.maxMembers} />;
+    }
+
+    // Timer ran out while the join screen was open
+    if (timerExpired && !isJoined) {
+        return <RoomEnded />;
+    }
+
     if (!isJoined) {
         return (
             <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4 text-foreground animate-in fade-in duration-500">
@@ -808,6 +808,13 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                 <p className="mt-3 truncate font-mono text-xs text-muted-foreground">{groupName}</p>
                             )}
                             <p className="mt-3 text-sm text-muted-foreground">Pick a temporary name. It disappears when you leave.</p>
+                            {(options.hasPassword || options.expiresAt || options.maxMembers) && (
+                                <div className="mt-4 flex flex-wrap justify-center gap-2 text-[11px] text-muted-foreground">
+                                    {options.hasPassword && <span className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1"><KeyRound className="h-3 w-3" /> Password</span>}
+                                    {remainingMs !== null && <span className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1"><Timer className="h-3 w-3" /> Closes in {formatCountdown(remainingMs)}</span>}
+                                    {options.maxMembers && <span className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1"><Users className="h-3 w-3" /> Up to {options.maxMembers}</span>}
+                                </div>
+                            )}
                         </div>
 
                         <form onSubmit={handleJoin} className="space-y-4">
@@ -829,12 +836,31 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                     )}
                                 />
                             </div>
-                            {joinError && (
-                                <p className="px-2 text-xs font-medium text-destructive animate-in slide-in-from-top-1">{joinError}</p>
+                            {options.hasPassword && (
+                                <div className="relative">
+                                    <KeyRound className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                    <Input
+                                        type="password"
+                                        autoComplete="off"
+                                        placeholder="room password"
+                                        value={passwordInput}
+                                        onChange={e => {
+                                            setPasswordInput(e.target.value);
+                                            setJoinError('');
+                                        }}
+                                        required
+                                        maxLength={64}
+                                        className="h-12 rounded-full border-border bg-background/60 pl-11 focus-visible:ring-foreground/30"
+                                    />
+                                </div>
                             )}
-                            <Button type="submit" size="lg" className="group h-12 w-full rounded-full bg-foreground font-bold text-background transition-transform hover:scale-[1.02] hover:bg-foreground active:scale-95">
-                                Enter room
-                                <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                            {joinError && (
+                                <p className="px-2 text-xs font-medium text-destructive animate-in slide-in-from-top-1" role="alert">{joinError}</p>
+                            )}
+                            <Button type="submit" size="lg" disabled={isJoining} className="group h-12 w-full rounded-full bg-foreground font-bold text-background transition-transform hover:scale-[1.02] hover:bg-foreground active:scale-95">
+                                {isJoining ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                {isJoining ? 'Checking…' : 'Enter room'}
+                                {!isJoining && <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />}
                             </Button>
                         </form>
 
@@ -906,6 +932,11 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                                     {userCount} online
                                 </span>
                                 <span className="hidden items-center gap-1 sm:flex"><Lock className="h-2.5 w-2.5" /> encrypted</span>
+                                {remainingMs !== null && !timerExpired && (
+                                    <span className={cn("flex items-center gap-1", remainingMs < 60_000 && "text-foreground animate-pulse")}>
+                                        <Timer className="h-2.5 w-2.5" /> {formatCountdown(remainingMs)}
+                                    </span>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -920,6 +951,16 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                         >
                             {shareCopied ? <Check className="h-4 w-4 sm:mr-1.5" /> : <Share2 className="h-4 w-4 sm:mr-1.5" />}
                             <span className="hidden sm:inline">{shareCopied ? 'Copied' : 'Share'}</span>
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => setShowQr(true)}
+                            className="h-9 w-9 rounded-full border-border bg-transparent hover:border-foreground/40"
+                            title="Show QR code"
+                            aria-label="Show QR code"
+                        >
+                            <QrIcon className="h-4 w-4" />
                         </Button>
                         <Button
                             variant="outline"
@@ -1535,6 +1576,30 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                     </div>
                 )}
 
+                {/* QR code */}
+                {showQr && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-md animate-in fade-in duration-200" onClick={() => setShowQr(false)}>
+                        <div className="relative w-full max-w-sm overflow-hidden rounded-[2rem] border border-border bg-card p-7 text-center shadow-[0_30px_80px_-30px_rgba(0,0,0,0.5)] animate-in zoom-in-95 duration-300" onClick={e => e.stopPropagation()}>
+                            <Button variant="ghost" size="icon" onClick={() => setShowQr(false)} aria-label="Close" className="absolute right-4 top-4 h-9 w-9 rounded-full">
+                                <X className="h-4 w-4" />
+                            </Button>
+                            <div className="mb-4 font-mono text-[11px] uppercase tracking-[0.25em] text-muted-foreground">Scan to join</div>
+                            <h3 className="mb-5 truncate text-2xl font-bold tracking-tighter">{groupName}</h3>
+                            <div className="mx-auto flex w-fit rounded-2xl border border-border bg-white p-2">
+                                <QrCode value={`${typeof window !== 'undefined' ? window.location.origin : ''}/chat/${groupId}${typeof window !== 'undefined' ? window.location.hash : ''}`} size={240} />
+                            </div>
+                            <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
+                                This code contains the room key, so anyone who scans it can read and join. Only show it to people you want inside.
+                                {options.hasPassword && ' They will still need the password.'}
+                            </p>
+                            <Button onClick={handleShareLink} variant="outline" className="mt-5 h-11 w-full rounded-full border-border hover:border-foreground/40">
+                                {shareCopied ? <Check className="mr-2 h-4 w-4" /> : <Share2 className="mr-2 h-4 w-4" />}
+                                {shareCopied ? 'Link copied' : 'Copy link instead'}
+                            </Button>
+                        </div>
+                    </div>
+                )}
+
                 {/* End Session Confirmation Dialog */}
                 {showEndConfirm && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-md animate-in fade-in duration-200">
@@ -1672,7 +1737,9 @@ export default function ChatRoom({ groupId, groupName }: { groupId: string; grou
                         </div>
                         <h2 className="text-4xl font-bold leading-[0.95] tracking-tighter md:text-5xl">Session ended.</h2>
                         <p className="mt-4 text-muted-foreground">
-                            {sessionEnded.self ? 'You closed this room.' : `${sessionEnded.by} closed this room.`} All messages and media have been wiped.
+                            {sessionEnded.by === 'timer'
+                                ? "This room's timer ran out."
+                                : sessionEnded.self ? 'You closed this room.' : `${sessionEnded.by} closed this room.`} All messages and media have been wiped.
                         </p>
                         <Button
                             onClick={() => router.push('/groups')}

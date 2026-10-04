@@ -76,6 +76,7 @@ export function SiteFooter() {
           <Link className="transition-colors hover:text-foreground" href="/about">About</Link>
           <Link className="transition-colors hover:text-foreground" href="/privacy">Privacy</Link>
           <Link className="transition-colors hover:text-foreground" href="/terms">Terms</Link>
+          <Link className="transition-colors hover:text-foreground" href="/status">Status</Link>
           <a className="transition-colors hover:text-foreground" href="mailto:support@nullchat.tech">Support</a>
         </div>
       </div>

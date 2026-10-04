@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/server/supabaseAdmin';
-import { extractProof, getGroup, isUuid, verifyRoomProof } from '@/lib/server/groups';
+import { extractProof, getLiveGroup, isUuid, verifyRoomProof } from '@/lib/server/groups';
 
 export async function POST(request: Request) {
     try {
@@ -11,7 +11,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Missing groupId' }, { status: 400 });
         }
 
-        const group = await getGroup(groupId);
+        const group = await getLiveGroup(groupId);
         if (!group) {
             return NextResponse.json({ success: true, ended: true });
         }

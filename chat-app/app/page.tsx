@@ -913,6 +913,9 @@ export default function Home() {
             <Link className="transition-colors hover:text-foreground" href="/terms">
               Terms
             </Link>
+            <Link className="transition-colors hover:text-foreground" href="/status">
+              Status
+            </Link>
           </div>
           <a
             className="inline-flex items-center gap-1 font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors hover:text-foreground"

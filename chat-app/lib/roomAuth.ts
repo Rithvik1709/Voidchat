@@ -16,8 +16,31 @@ async function sha256Hex(input: string): Promise<string> {
         .join('');
 }
 
-export function getRoomProof(keyString: string): Promise<string> {
-    return sha256Hex(`nullchat-proof:${keyString}`);
+/**
+ * Rooms can also have a password "on top of the link". The password is mixed into the proof,
+ * so a wrong password fails the server's check, and into the encryption key (deriveRoomKey),
+ * so a wrong password cannot decrypt anything either.
+ */
+export function getRoomProof(keyString: string, password?: string): Promise<string> {
+    return sha256Hex(password ? `nullchat-proof:${keyString}:pw:${password}` : `nullchat-proof:${keyString}`);
+}
+
+const PBKDF2_ITERATIONS = 210_000;
+
+/**
+ * Encryption key for a password-protected room: PBKDF2(password, salt = link key). Without the
+ * link the password alone is useless, and without the password the link alone is useless.
+ */
+export async function deriveRoomKey(keyString: string, password: string): Promise<CryptoKey> {
+    const enc = new TextEncoder();
+    const material = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt: enc.encode(`nullchat-room:${keyString}`), iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+        material,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+    );
 }
 
 // ---- Creator-side key storage -------------------------------------------------

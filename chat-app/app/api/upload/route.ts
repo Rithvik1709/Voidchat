@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin, MEDIA_BUCKET } from '@/lib/server/supabaseAdmin';
-import { extractProof, getGroup, isUuid, verifyRoomProof } from '@/lib/server/groups';
+import { extractProof, getLiveGroup, isUuid, verifyRoomProof } from '@/lib/server/groups';
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
 const MAX_FILES_PER_ROOM = 50;
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
         }
 
         // Only a member of an existing room can upload to it.
-        const group = await getGroup(groupId);
+        const group = await getLiveGroup(groupId);
         if (!group) {
             return NextResponse.json({ error: 'This room no longer exists.' }, { status: 404 });
         }

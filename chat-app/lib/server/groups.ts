@@ -13,7 +13,13 @@ export type GroupRow = {
     active_user_count?: number | null;
     last_active_at?: string | null;
     created_at?: string;
+    expires_at?: string | null;
+    max_members?: number | null;
+    has_password?: boolean | null;
 };
+
+export const isExpired = (group: Pick<GroupRow, 'expires_at'>, now = Date.now()) =>
+    Boolean(group.expires_at) && new Date(group.expires_at as string).getTime() <= now;
 
 export async function getGroup(groupId: string): Promise<GroupRow | null> {
     if (!isUuid(groupId)) return null;
@@ -27,6 +33,24 @@ export async function getGroup(groupId: string): Promise<GroupRow | null> {
         return null;
     }
     return (data as GroupRow) ?? null;
+}
+
+/**
+ * Like getGroup, but a room whose timer has run out is deleted (with its media) and reported as
+ * gone, so an expired room can never be joined, uploaded to or kept alive.
+ */
+export async function getLiveGroup(groupId: string): Promise<GroupRow | null> {
+    const group = await getGroup(groupId);
+    if (!group) return null;
+    if (isExpired(group)) {
+        try {
+            await deleteGroupAndMedia(groupId);
+        } catch {
+            /* logged inside */
+        }
+        return null;
+    }
+    return group;
 }
 
 /** Proof comes from the x-room-proof header or the request body. */
@@ -90,7 +114,7 @@ const STALE_MS = 30 * 60 * 1000; // no heartbeat for this long => nobody is real
  * Remove rooms nobody is using. Safe to call by anyone, any time: it only touches rooms that
  * are empty AND old, or that have not sent a heartbeat for a long time (stuck user counts).
  */
-export async function sweepStaleGroups(): Promise<{ emptyGroups: number; inactiveGroups: number }> {
+export async function sweepStaleGroups(): Promise<{ emptyGroups: number; inactiveGroups: number; expiredGroups: number }> {
     const now = Date.now();
     const emptyCutoff = new Date(now - EMPTY_GRACE_MS).toISOString();
     const staleCutoff = new Date(now - STALE_MS).toISOString();
@@ -100,6 +124,13 @@ export async function sweepStaleGroups(): Promise<{ emptyGroups: number; inactiv
         .select('id')
         .lte('active_user_count', 0)
         .lt('last_active_at', emptyCutoff);
+
+    // Rooms whose auto-close timer has run out (column only exists after migrations/room_options.sql)
+    const { data: expired } = await supabaseAdmin
+        .from('groups')
+        .select('id')
+        .not('expires_at', 'is', null)
+        .lt('expires_at', new Date(now).toISOString());
 
     const { data: stale } = await supabaseAdmin
         .from('groups')
@@ -119,7 +150,11 @@ export async function sweepStaleGroups(): Promise<{ emptyGroups: number; inactiv
         return n;
     };
 
-    return { emptyGroups: await remove(empty), inactiveGroups: await remove(stale) };
+    return {
+        emptyGroups: await remove(empty),
+        inactiveGroups: await remove(stale),
+        expiredGroups: await remove(expired ?? []),
+    };
 }
 
 let lastSweep = 0;

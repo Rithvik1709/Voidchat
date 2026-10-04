@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/server/supabaseAdmin';
 import { hashProof, isUuid, maybeSweep } from '@/lib/server/groups';
+import { ALLOWED_EXPIRY_MINUTES, MAX_MEMBERS, MIN_MEMBERS } from '@/lib/roomOptions';
 
 const MAX_GROUPS_PER_CREATOR = 10;
 const CREATE_LIMIT_PER_HOUR = 20;
@@ -22,6 +23,16 @@ function rateLimited(req: Request): boolean {
     return false;
 }
 
+const PUBLIC_COLUMNS = [
+    'id', 'name', 'tags', 'active_user_count', 'created_at', 'last_active_at',
+    'key', 'expires_at', 'max_members', 'has_password',
+] as const;
+
+/** Never expose proof_hash or anything else outside the public column list. */
+function shape(row: Record<string, unknown>) {
+    return Object.fromEntries(PUBLIC_COLUMNS.filter(c => c in row).map(c => [c, row[c]]));
+}
+
 // GET /api/groups - List active groups (filtered by creator_id)
 export async function GET(req: Request) {
     try {
@@ -32,22 +43,25 @@ export async function GET(req: Request) {
             return NextResponse.json([]);
         }
 
-        // `key` is only returned for legacy rooms that still have one stored; new rooms never do.
+        // select('*') so the list keeps working before/after the room-options migration;
+        // `key` is only present for legacy rooms that still have one stored.
         const { data: groups, error } = await supabaseAdmin
             .from('groups')
-            .select('id, name, tags, active_user_count, created_at, last_active_at, key')
+            .select('*')
             .eq('creator_id', creatorId)
             .order('created_at', { ascending: false })
             .limit(MAX_GROUPS_PER_CREATOR);
 
         if (error) throw error;
 
-        return NextResponse.json(groups || []);
+        return NextResponse.json((groups || []).map(g => shape(g as Record<string, unknown>)));
     } catch (err) {
         console.error('Error fetching groups:', err);
         return NextResponse.json({ error: 'Failed to fetch groups' }, { status: 500 });
     }
 }
+
+const isMissingColumn = (code?: string) => code === 'PGRST204' || code === '42703';
 
 // POST /api/groups - Create a new group. The room key is NEVER sent here: only a proof of it.
 export async function POST(req: Request) {
@@ -65,6 +79,28 @@ export async function POST(req: Request) {
 
         if (typeof proof !== 'string' || proof.length < 16 || proof.length > 128) {
             return NextResponse.json({ error: 'Room proof is required' }, { status: 400 });
+        }
+
+        // ---- Room options (all optional) ----
+        const options: Record<string, unknown> = {};
+
+        if (body.expires_in_minutes !== undefined && body.expires_in_minutes !== null) {
+            if (!ALLOWED_EXPIRY_MINUTES.includes(body.expires_in_minutes)) {
+                return NextResponse.json({ error: 'Invalid auto-close time.' }, { status: 400 });
+            }
+            options.expires_at = new Date(Date.now() + body.expires_in_minutes * 60_000).toISOString();
+        }
+
+        if (body.max_members !== undefined && body.max_members !== null) {
+            const n = body.max_members;
+            if (!Number.isInteger(n) || n < MIN_MEMBERS || n > MAX_MEMBERS) {
+                return NextResponse.json({ error: `Member limit must be a whole number of at least ${MIN_MEMBERS}.` }, { status: 400 });
+            }
+            options.max_members = n;
+        }
+
+        if (body.password_protected === true) {
+            options.has_password = true;
         }
 
         if (rateLimited(req)) {
@@ -91,26 +127,31 @@ export async function POST(req: Request) {
             active_user_count: 0,
         };
 
-        let { data, error } = await supabaseAdmin
-            .from('groups')
-            .insert([{ ...row, proof_hash: hashProof(proof) }])
-            .select('id, name, tags, active_user_count, created_at')
-            .single();
+        const wantsOptions = Object.keys(options).length > 0;
+        let withProof: Record<string, unknown> = { ...row, ...options, proof_hash: hashProof(proof) };
 
-        // Database not migrated yet (no proof_hash column): create the room without it.
-        if (error && (error.code === 'PGRST204' || error.code === '42703')) {
+        let { data, error } = await supabaseAdmin.from('groups').insert([withProof]).select('*').single();
+
+        // proof_hash column missing (security migration not run yet): create without it
+        if (error && isMissingColumn(error.code) && /proof_hash/.test(error.message || '')) {
             console.warn('groups.proof_hash is missing. Run migrations/security_hardening.sql.');
-            ({ data, error } = await supabaseAdmin
-                .from('groups')
-                .insert([row])
-                .select('id, name, tags, active_user_count, created_at')
-                .single());
+            withProof = { ...row, ...options };
+            ({ data, error } = await supabaseAdmin.from('groups').insert([withProof]).select('*').single());
+        }
+
+        // Option columns missing: never silently drop a timer/limit/password the user asked for
+        if (error && isMissingColumn(error.code) && wantsOptions) {
+            console.warn('Room option columns are missing. Run migrations/room_options.sql.');
+            return NextResponse.json(
+                { error: 'Room options are not enabled yet: the database needs migrations/room_options.sql.' },
+                { status: 503 }
+            );
         }
 
         if (error) throw error;
 
         maybeSweep();
-        return NextResponse.json(data, { status: 201 });
+        return NextResponse.json(shape(data as Record<string, unknown>), { status: 201 });
     } catch (err) {
         console.error('Error creating group:', err);
         return NextResponse.json({ error: 'Failed to create group' }, { status: 500 });

@@ -13,7 +13,7 @@ const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 export const hasServiceRole = Boolean(serviceKey);
 
-if (!serviceKey && process.env.NODE_ENV === 'production') {
+if (!serviceKey && process.env.NODE_ENV === 'production' && process.env.NEXT_PHASE !== 'phase-production-build') {
     console.warn('SUPABASE_SERVICE_ROLE_KEY is not set: server routes are using the anon key.');
 }
 

@@ -5,12 +5,13 @@ import { sweepStaleGroups } from '@/lib/server/groups';
 // or that have not sent a heartbeat for 30 minutes. Brand-new rooms are never touched.
 async function run() {
     try {
-        const { emptyGroups, inactiveGroups } = await sweepStaleGroups();
+        const { emptyGroups, inactiveGroups, expiredGroups } = await sweepStaleGroups();
         return NextResponse.json({
             success: true,
-            deleted: emptyGroups + inactiveGroups,
+            deleted: emptyGroups + inactiveGroups + expiredGroups,
             emptyGroups,
             inactiveGroups,
+            expiredGroups,
         });
     } catch (err) {
         console.error('Cleanup error:', err);
