@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button, Card, CardContent } from './ui/basic';
 import { motion } from 'framer-motion';
-import { ArrowLeft, ArrowRight, Check, KeyRound, Link2, Plus, Search, Timer, Users } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Flame, KeyRound, Link2, Plus, Search, Timer, Users } from 'lucide-react';
 import CreateGroupModal from './CreateGroupModal';
 import ModeToggle from './ModeToggle';
+import { describeBurn } from '@/lib/roomOptions';
 import { loadRoomKey, pruneRoomKeys } from '@/lib/roomAuth';
 
 interface Group {
@@ -18,6 +19,8 @@ interface Group {
     expires_at?: string | null;
     max_members?: number | null;
     has_password?: boolean;
+    invite_only?: boolean;
+    burn_seconds?: number | null;
 }
 
 export default function GroupList() {
@@ -295,6 +298,16 @@ export default function GroupList() {
                                                             {group.has_password && (
                                                                 <span className="flex items-center gap-1 rounded-full bg-foreground px-2.5 py-1 font-mono text-[10px] uppercase tracking-wide text-background" title="Password protected">
                                                                     <KeyRound className="h-3 w-3" /> Password
+                                                                </span>
+                                                            )}
+                                                            {group.burn_seconds && (
+                                                                <span className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wide text-muted-foreground" title="Messages burn after this long">
+                                                                    <Flame className="h-3 w-3" /> Burns {describeBurn(group.burn_seconds)}
+                                                                </span>
+                                                            )}
+                                                            {group.invite_only && (
+                                                                <span className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wide text-muted-foreground" title="People get in through one-time links">
+                                                                    <Flame className="h-3 w-3" /> One-time links
                                                                 </span>
                                                             )}
                                                             {group.expires_at && (

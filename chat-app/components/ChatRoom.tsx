@@ -1,20 +1,24 @@
 "use client";
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { importKey, encryptMessage, decryptMessage } from '@/lib/crypto';
 import { deriveRoomKey, getRoomProof } from '@/lib/roomAuth';
-import { formatCountdown, type RoomOptions } from '@/lib/roomOptions';
+import { describeBurn, formatCountdown, type RoomOptions } from '@/lib/roomOptions';
 import RoomEnded from './RoomEnded';
 import RoomFull from './RoomFull';
-import QrCode from './QrCode';
+import InviteManager from './InviteManager';
+import SandBurn from './SandBurn';
+import { dueIds, mediaPathFromUrl, trackMessages } from '@/lib/burn';
+import { createJoinerKeys, inviteMac, inviteTokenHash, isInviteToken, unwrapRoomKey } from '@/lib/invites';
+import { loadJoinedKey, saveJoinedKey } from '@/lib/inviteSession';
 import {
     createSigner, importPublicKey, verifySignature, messageSigData, voteSigData, updatePins,
     type Signer,
 } from '@/lib/signing';
 import { Button, Input, Card } from './ui/basic';
-import { Send, ArrowLeft, ArrowRight, Check, Loader2, Lock, Power, Reply, X, Users, Plus, Smile, Share2, BarChart3, Mic, Image as ImageIcon, KeyRound, QrCode as QrIcon, Timer } from 'lucide-react';
+import { Send, ArrowLeft, ArrowRight, Loader2, Lock, Power, Reply, X, Users, Plus, Smile, BarChart3, Mic, Image as ImageIcon, KeyRound, Flame, Timer, UserPlus } from 'lucide-react';
 import AudioRecorder from './AudioRecorder';
 import AudioPlayer from './AudioPlayer';
 import { cn } from '@/lib/utils';
@@ -23,7 +27,7 @@ import ModeToggle from "./ModeToggle";
 import EmojiPickerPopover from './EmojiPicker';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import {
-    MAX_AUDIO_SEND_B64, MAX_NAME_LENGTH, MAX_TEXT_LENGTH,
+    MAX_AUDIO_SEND_B64, MAX_NAME_LENGTH, MAX_TEXT_LENGTH, MEDIA_URL_PREFIX,
     applyVote, escapeRegExp, isRecord, newId, sanitizeContent,
     type MessageContent, type PollData,
 } from '@/lib/chatSafety';
@@ -59,7 +63,7 @@ const GRID_BG = {
     backgroundSize: '56px 56px',
 } as const;
 
-const NO_OPTIONS: RoomOptions = { hasPassword: false, expiresAt: null, serverNow: '', maxMembers: null };
+const NO_OPTIONS: RoomOptions = { hasPassword: false, expiresAt: null, serverNow: '', maxMembers: null, inviteOnly: false, burnSeconds: null };
 
 export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: { groupId: string; groupName: string; options?: RoomOptions }) {
     const [messages, setMessages] = useState<Message[]>([]);
@@ -81,13 +85,15 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
     const [passwordInput, setPasswordInput] = useState('');
     const [isJoining, setIsJoining] = useState(false);
     const [roomFull, setRoomFull] = useState(false);
-    const [showQr, setShowQr] = useState(false);
+    const [showInvite, setShowInvite] = useState(false);
+    const [inviteMode, setInviteMode] = useState(false);
+    const [joinStatus, setJoinStatus] = useState('');
+    const inviteTokenRef = useRef('');
     const [nowMs, setNowMs] = useState(0);
     const rawKeyRef = useRef('');
     const serverOffsetRef = useRef(0);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
-    const [shareCopied, setShareCopied] = useState(false);
     const [showPlusMenu, setShowPlusMenu] = useState(false);
     const [showPollModal, setShowPollModal] = useState(false);
     const [pollQuestion, setPollQuestion] = useState('');
@@ -135,6 +141,65 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
 
     useEffect(() => { usernameRef.current = username; }, [username]);
     useEffect(() => { messagesRef.current = messages; }, [messages]);
+
+    const notify = useCallback((text: string) => {
+        setMessages(prev => [...prev, {
+            id: newId(),
+            sender: 'System',
+            content: { text },
+            timestamp: new Date().toISOString(),
+            isSystem: true
+        }]);
+    }, []);
+
+    // ---- Burn mode ------------------------------------------------------------------------
+    // Every message burns a fixed time after it appears on THIS device (so no clocks need to agree).
+    const burnMs = options.burnSeconds ? options.burnSeconds * 1000 : null;
+    const [burningIds, setBurningIds] = useState<ReadonlySet<string>>(new Set());
+    const burningRef = useRef<ReadonlySet<string>>(new Set());
+    const seenRef = useRef(new Map<string, number>());
+
+    useEffect(() => {
+        if (!burnMs || !isJoined) return;
+        const id = setInterval(() => {
+            const now = Date.now();
+            trackMessages(seenRef.current, messagesRef.current.map(m => m.id), now);
+            const due = dueIds(seenRef.current, burningRef.current, now, burnMs);
+            if (due.length > 0) {
+                const next = new Set(burningRef.current);
+                due.forEach(d => next.add(d));
+                burningRef.current = next;
+                setBurningIds(next);
+            }
+        }, 250);
+        return () => clearInterval(id);
+    }, [burnMs, isJoined]);
+
+    // Called when a message's sand has finished falling: it is gone for good
+    const finishBurn = useCallback((id: string) => {
+        const gone = messagesRef.current.find(m => m.id === id);
+        setMessages(prev => prev.filter(m => m.id !== id));
+        const next = new Set(burningRef.current);
+        next.delete(id);
+        burningRef.current = next;
+        setBurningIds(next);
+        seenRef.current.delete(id);
+        setReplyingTo(r => (r?.id === id ? null : r));
+
+        // A picture I sent: delete the file too, so a burned image is not still reachable by its link
+        if (gone && gone.sender === usernameRef.current && gone.content.image) {
+            const path = mediaPathFromUrl(gone.content.image, groupId, MEDIA_URL_PREFIX);
+            if (path) {
+                setTimeout(() => {
+                    fetch('/api/upload', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json', 'x-room-proof': proofRef.current },
+                        body: JSON.stringify({ groupId, path })
+                    }).catch(() => undefined);
+                }, 8000);
+            }
+        }
+    }, [groupId]);
 
     // One signing key per tab, created on first use and kept only in memory
     const getSigner = () => (signerRef.current ??= createSigner());
@@ -196,20 +261,29 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Initialize encryption key (and the proof the server uses to check we know it)
+    // Initialize encryption key (and the proof the server uses to check we know it).
+    // A room link carries the key; a one-time link carries only a token and the key arrives
+    // after the invite is claimed (see receiveKeyViaInvite).
     useEffect(() => {
         const hash = window.location.hash;
         const params = new URLSearchParams(hash.replace('#', '?'));
         const keyString = params.get('key');
+        const inviteToken = params.get('invite');
+        const savedKey = loadJoinedKey(groupId); // kept for this tab after joining by invite, so a refresh works
 
-        if (!keyString) {
-            setError('Missing encryption key. Please join via a valid link.');
+        if (!keyString && !savedKey) {
+            if (isInviteToken(inviteToken)) {
+                inviteTokenRef.current = inviteToken;
+                setInviteMode(true);
+            } else {
+                setError(inviteToken ? 'This invite link is not valid.' : 'Missing encryption key. Please join via a valid link.');
+            }
             return;
         }
 
         const init = async () => {
             try {
-                const rawKey = decodeURIComponent(keyString);
+                const rawKey = keyString ? decodeURIComponent(keyString) : (savedKey as string);
                 rawKeyRef.current = rawKey;
                 const importedKey = await importKey(rawKey); // also validates the link's key
                 if (options.hasPassword) return; // the real key is derived from the password at join
@@ -222,6 +296,8 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
         };
 
         init();
+        // runs once on mount: the link is read exactly once
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
@@ -522,6 +598,41 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, replyingTo]);
 
+    /**
+     * One-time link: claim the invite (this is what burns it), then wait for the person who made
+     * it to send the room key, encrypted so that only this browser can read it.
+     */
+    const receiveKeyViaInvite = async (): Promise<string> => {
+        const token = inviteTokenRef.current;
+        const joiner = await createJoinerKeys();
+        const mac = await inviteMac(token, joiner.publicJwk);
+
+        setJoinStatus('Using your invite…');
+        const claimRes = await fetch('/api/invites/claim', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ groupId, tokenHash: await inviteTokenHash(token), pub: joiner.publicJwk, mac })
+        });
+        if (!claimRes.ok) {
+            const data = await claimRes.json().catch(() => ({}));
+            throw new Error(data.error || 'This invite could not be used.');
+        }
+        const { inviteId } = await claimRes.json() as { inviteId: string };
+
+        setJoinStatus('Waiting for the person who invited you to let you in…');
+        const deadline = Date.now() + 100_000; // the server frees an unanswered claim after 2 minutes
+        while (Date.now() < deadline) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            const res = await fetch(`/api/invites/${inviteId}/delivery?mac=${mac}`, { cache: 'no-store' });
+            if (res.status === 404) throw new Error('This invite was taken over by someone else.');
+            if (!res.ok) continue;
+            const data = await res.json();
+            if (data.status === 'released') throw new Error('Nobody let you in in time. Open the link again to retry.');
+            if (data.delivery) return unwrapRoomKey(data.delivery, joiner.privateKey, inviteId);
+        }
+        throw new Error('The person who invited you is not in the room right now. Open the link again once they are.');
+    };
+
     const handleJoin = async (e: React.FormEvent) => {
         e.preventDefault();
         if (isJoining) return;
@@ -534,13 +645,29 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
             return;
         }
 
-        if (options.hasPassword) {
-            if (!passwordInput) {
-                setJoinError('Enter the room password.');
-                return;
+        // Check this before an invite is used up, so a typo here never costs someone their link
+        if (options.hasPassword && !passwordInput) {
+            setJoinError('Enter the room password.');
+            return;
+        }
+
+        setIsJoining(true);
+        try {
+            // 1) Get the room key: from the link (already loaded) or through a one-time invite
+            if (!rawKeyRef.current) {
+                if (!inviteTokenRef.current) {
+                    setError('Missing encryption key. Please join via a valid link.');
+                    return;
+                }
+                const received = await receiveKeyViaInvite();
+                await importKey(received); // reject anything that is not a usable key
+                rawKeyRef.current = received;
+                saveJoinedKey(groupId, received);
+                setInviteMode(false);
             }
-            setIsJoining(true);
-            try {
+
+            // 2) Password rooms: check the password, then derive the real key from it
+            if (options.hasPassword) {
                 const proof = await getRoomProof(rawKeyRef.current, passwordInput);
                 const res = await fetch(`/api/groups/${groupId}/verify`, {
                     method: 'POST',
@@ -561,13 +688,17 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                 }
                 proofRef.current = proof;
                 setKey(await deriveRoomKey(rawKeyRef.current, passwordInput));
-            } catch (err) {
-                console.error(err);
-                setJoinError('Could not check the password. Try again.');
-                return;
-            } finally {
-                setIsJoining(false);
+            } else if (!key) {
+                proofRef.current = await getRoomProof(rawKeyRef.current);
+                setKey(await importKey(rawKeyRef.current));
             }
+        } catch (err) {
+            console.error(err);
+            setJoinError(err instanceof Error && err.message ? err.message : 'Could not join. Try again.');
+            return;
+        } finally {
+            setIsJoining(false);
+            setJoinStatus('');
         }
 
         setIsJoined(true);
@@ -614,19 +745,6 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
             setEndError(err instanceof Error ? err.message : 'Could not end the session.');
         } finally {
             setIsEnding(false);
-        }
-    };
-
-    const handleShareLink = async () => {
-        const keyHash = window.location.hash || '';
-        const link = `${window.location.origin}/chat/${groupId}${keyHash}`;
-
-        try {
-            await navigator.clipboard.writeText(link);
-            setShareCopied(true);
-            setTimeout(() => setShareCopied(false), 2000);
-        } catch (err) {
-            console.error('Copy failed', err);
         }
     };
 
@@ -808,8 +926,14 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                                 <p className="mt-3 truncate font-mono text-xs text-muted-foreground">{groupName}</p>
                             )}
                             <p className="mt-3 text-sm text-muted-foreground">Pick a temporary name. It disappears when you leave.</p>
-                            {(options.hasPassword || options.expiresAt || options.maxMembers) && (
+                            {inviteMode && (
+                                <p className="mx-auto mt-4 flex w-fit items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[11px] text-foreground">
+                                    <Flame className="h-3 w-3" /> You have a one-time invite. It burns when you use it.
+                                </p>
+                            )}
+                            {(options.hasPassword || options.expiresAt || options.maxMembers || options.burnSeconds) && (
                                 <div className="mt-4 flex flex-wrap justify-center gap-2 text-[11px] text-muted-foreground">
+                                    {options.burnSeconds && <span className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1"><Flame className="h-3 w-3" /> Messages burn after {describeBurn(options.burnSeconds)}</span>}
                                     {options.hasPassword && <span className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1"><KeyRound className="h-3 w-3" /> Password</span>}
                                     {remainingMs !== null && <span className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1"><Timer className="h-3 w-3" /> Closes in {formatCountdown(remainingMs)}</span>}
                                     {options.maxMembers && <span className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1"><Users className="h-3 w-3" /> Up to {options.maxMembers}</span>}
@@ -857,9 +981,12 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                             {joinError && (
                                 <p className="px-2 text-xs font-medium text-destructive animate-in slide-in-from-top-1" role="alert">{joinError}</p>
                             )}
+                            {isJoining && joinStatus && (
+                                <p className="px-2 text-center text-xs text-muted-foreground" aria-live="polite">{joinStatus}</p>
+                            )}
                             <Button type="submit" size="lg" disabled={isJoining} className="group h-12 w-full rounded-full bg-foreground font-bold text-background transition-transform hover:scale-[1.02] hover:bg-foreground active:scale-95">
                                 {isJoining ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                                {isJoining ? 'Checking…' : 'Enter room'}
+                                {isJoining ? 'Please wait…' : inviteMode ? 'Use invite & enter' : 'Enter room'}
                                 {!isJoining && <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />}
                             </Button>
                         </form>
@@ -932,6 +1059,11 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                                     {userCount} online
                                 </span>
                                 <span className="hidden items-center gap-1 sm:flex"><Lock className="h-2.5 w-2.5" /> encrypted</span>
+                                {options.burnSeconds && (
+                                    <span className="flex items-center gap-1" title="Messages burn after this long">
+                                        <Flame className="h-2.5 w-2.5" /> burn {describeBurn(options.burnSeconds)}
+                                    </span>
+                                )}
                                 {remainingMs !== null && !timerExpired && (
                                     <span className={cn("flex items-center gap-1", remainingMs < 60_000 && "text-foreground animate-pulse")}>
                                         <Timer className="h-2.5 w-2.5" /> {formatCountdown(remainingMs)}
@@ -945,22 +1077,12 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                         <Button
                             variant="outline"
                             size="sm"
-                            onClick={handleShareLink}
+                            onClick={() => setShowInvite(true)}
                             className="rounded-full border-border bg-transparent px-3 hover:border-foreground/40"
-                            title="Copy invite link"
+                            title="Invite people"
                         >
-                            {shareCopied ? <Check className="h-4 w-4 sm:mr-1.5" /> : <Share2 className="h-4 w-4 sm:mr-1.5" />}
-                            <span className="hidden sm:inline">{shareCopied ? 'Copied' : 'Share'}</span>
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={() => setShowQr(true)}
-                            className="h-9 w-9 rounded-full border-border bg-transparent hover:border-foreground/40"
-                            title="Show QR code"
-                            aria-label="Show QR code"
-                        >
-                            <QrIcon className="h-4 w-4" />
+                            <UserPlus className="h-4 w-4 sm:mr-1.5" />
+                            <span className="hidden sm:inline">Invite</span>
                         </Button>
                         <Button
                             variant="outline"
@@ -999,27 +1121,31 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                                 </div>
                                 <h3 className="text-2xl font-bold tracking-tighter">Room is open.</h3>
                                 <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">
-                                    Messages are encrypted and exist only while this session is live. Say something, or share the link.
+                                    {options.burnSeconds
+                                        ? `Burn mode is on: every message turns to sand ${options.burnSeconds} seconds after it appears.`
+                                        : 'Messages are encrypted and exist only while this session is live.'}{' '}
+                                    Say something, or invite someone.
                                 </p>
                                 <button
                                     type="button"
-                                    onClick={handleShareLink}
+                                    onClick={() => setShowInvite(true)}
                                     className="mt-6 inline-flex items-center gap-2 rounded-full border border-border px-5 py-2.5 text-sm font-semibold transition-colors hover:border-foreground/40"
                                 >
-                                    {shareCopied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
-                                    {shareCopied ? 'Link copied' : 'Copy invite link'}
+                                    <UserPlus className="h-4 w-4" />
+                                    Invite people
                                 </button>
                             </div>
                         )}
                         {messages.map((msg, index) => {
                             if (msg.isSystem) {
                                 return (
-                                    <div key={msg.id} className="my-4 flex items-center justify-center gap-3 opacity-70">
+                                    <div key={msg.id} className="relative my-4 flex items-center justify-center gap-3 opacity-70">
                                         <span className="h-px w-8 bg-border" />
-                                        <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                        <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground" data-burn-target data-burn-bubble>
                                             {msg.content.text}
                                         </span>
                                         <span className="h-px w-8 bg-border" />
+                                        {burnMs && <SandBurn burning={burningIds.has(msg.id)} onDone={() => finishBurn(msg.id)} />}
                                     </div>
                                 );
                             }
@@ -1079,7 +1205,7 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                                         </div>
 
                                         {/* Message Bubble Container */}
-                                        <div className={cn("flex flex-col max-w-[75%]", isMe ? "items-end" : "items-start")}>
+                                        <div className={cn("flex flex-col max-w-[75%]", isMe ? "items-end" : "items-start")} data-burn-target>
                                             {showHeader && (
                                                 <div className="flex items-baseline gap-2 mb-1 px-1">
                                                     <span className="font-mono text-[11px] font-semibold text-foreground/80">{msg.sender}</span>
@@ -1092,6 +1218,7 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                                             {/* Reply action button (Desktop Hover) */}
                                             <div className="relative group/bubble">
                                                 <div
+                                                    data-burn-bubble
                                                     className={cn(
                                                         "relative px-4 py-2.5 text-sm break-words whitespace-pre-wrap leading-relaxed", // Added whitespace-pre-wrap
                                                         isMe
@@ -1239,8 +1366,17 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                                                     <Reply className="h-4 w-4 text-muted-foreground" />
                                                 </button>
                                             </div>
+                                            {burnMs && !burningIds.has(msg.id) && (
+                                                <span
+                                                    aria-hidden
+                                                    data-burn-ember
+                                                    className="mt-1 h-[2px] w-full origin-left rounded-full bg-foreground/30"
+                                                    style={{ animation: `burn-shrink ${burnMs}ms linear forwards` }}
+                                                />
+                                            )}
                                         </div>
                                     </motion.div>
+                                    {burnMs && <SandBurn burning={burningIds.has(msg.id)} onDone={() => finishBurn(msg.id)} />}
                                 </motion.div>
                             );
                         })}
@@ -1576,29 +1712,17 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                     </div>
                 )}
 
-                {/* QR code */}
-                {showQr && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-md animate-in fade-in duration-200" onClick={() => setShowQr(false)}>
-                        <div className="relative w-full max-w-sm overflow-hidden rounded-[2rem] border border-border bg-card p-7 text-center shadow-[0_30px_80px_-30px_rgba(0,0,0,0.5)] animate-in zoom-in-95 duration-300" onClick={e => e.stopPropagation()}>
-                            <Button variant="ghost" size="icon" onClick={() => setShowQr(false)} aria-label="Close" className="absolute right-4 top-4 h-9 w-9 rounded-full">
-                                <X className="h-4 w-4" />
-                            </Button>
-                            <div className="mb-4 font-mono text-[11px] uppercase tracking-[0.25em] text-muted-foreground">Scan to join</div>
-                            <h3 className="mb-5 truncate text-2xl font-bold tracking-tighter">{groupName}</h3>
-                            <div className="mx-auto flex w-fit rounded-2xl border border-border bg-white p-2">
-                                <QrCode value={`${typeof window !== 'undefined' ? window.location.origin : ''}/chat/${groupId}${typeof window !== 'undefined' ? window.location.hash : ''}`} size={240} />
-                            </div>
-                            <p className="mt-5 text-xs leading-relaxed text-muted-foreground">
-                                This code contains the room key, so anyone who scans it can read and join. Only show it to people you want inside.
-                                {options.hasPassword && ' They will still need the password.'}
-                            </p>
-                            <Button onClick={handleShareLink} variant="outline" className="mt-5 h-11 w-full rounded-full border-border hover:border-foreground/40">
-                                {shareCopied ? <Check className="mr-2 h-4 w-4" /> : <Share2 className="mr-2 h-4 w-4" />}
-                                {shareCopied ? 'Link copied' : 'Copy link instead'}
-                            </Button>
-                        </div>
-                    </div>
-                )}
+                <InviteManager
+                    groupId={groupId}
+                    groupName={groupName}
+                    open={showInvite}
+                    onClose={() => setShowInvite(false)}
+                    roomKeyRef={rawKeyRef}
+                    proofRef={proofRef}
+                    inviteOnly={options.inviteOnly}
+                    hasPassword={options.hasPassword}
+                    onNotice={notify}
+                />
 
                 {/* End Session Confirmation Dialog */}
                 {showEndConfirm && (

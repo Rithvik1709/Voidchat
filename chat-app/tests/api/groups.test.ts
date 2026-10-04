@@ -114,6 +114,41 @@ describe('room options on create', () => {
   });
 });
 
+describe('burn mode option', () => {
+  it('stores any burn time from 5 seconds up', async () => {
+    for (const n of [5, 30, 90, 3600, 100_000]) {
+      expect((await create({ burn_seconds: n, creator_id: crypto.randomUUID() })).status, `${n}s`).toBe(201);
+    }
+    expect((await getDb()).tables.groups.map(g => g.burn_seconds)).toEqual([5, 30, 90, 3600, 100_000]);
+  });
+
+  it('rejects burn times that are too short or not whole numbers', async () => {
+    for (const bad of [0, 4, -30, 2.5, '30', 2_147_483_648]) {
+      expect((await create({ burn_seconds: bad })).status, String(bad)).toBe(400);
+    }
+    expect((await getDb()).tables.groups).toHaveLength(0);
+  });
+
+  it('treats null as "burn mode off"', async () => {
+    expect((await create({ burn_seconds: null })).status).toBe(201);
+    expect((await getDb()).tables.groups[0]).not.toHaveProperty('burn_seconds');
+  });
+
+  it('returns the setting to the creator\'s list', async () => {
+    await create({ burn_seconds: 30 });
+    const res = await GET(new Request(`http://localhost/api/groups?creator_id=${creator}`));
+    expect((await res.json())[0].burn_seconds).toBe(30);
+  });
+
+  it('refuses (instead of silently ignoring) burn mode when the database is not migrated', async () => {
+    (await getDb()).missingColumns = new Set(['burn_seconds']);
+    const res = await create({ burn_seconds: 30 });
+    expect(res.status).toBe(503);
+    expect((await res.json()).error).toMatch(/burn_mode\.sql/);
+    expect((await getDb()).tables.groups).toHaveLength(0);
+  });
+});
+
 describe('GET /api/groups', () => {
   it('returns only the caller\'s rooms and never exposes proof_hash', async () => {
     const db = await getDb();

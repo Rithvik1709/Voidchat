@@ -102,3 +102,12 @@
 ::view-transition-new(root) {
     z-index: 9999;
 }
+/* Burn mode: the thin ember line under a message that shrinks as its time runs out */
+@keyframes burn-shrink {
+    from { transform: scaleX(1); }
+    to { transform: scaleX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    [data-burn-ember] { animation: none !important; }
+}

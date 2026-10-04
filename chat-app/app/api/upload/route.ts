@@ -102,3 +102,40 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Failed to upload file' }, { status: 500 });
     }
 }
+
+// DELETE /api/upload: remove one uploaded image. The browser that sent an image calls this after
+// the message has burned, so a "burned" picture is not left reachable by its link.
+export async function DELETE(req: Request) {
+    try {
+        const body = await req.json().catch(() => ({}));
+        const { groupId, path } = body as { groupId?: unknown; path?: unknown };
+
+        if (!isUuid(groupId) || typeof path !== 'string') {
+            return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+        }
+
+        // Only a file this server could have created, inside this room's folder
+        const shape = new RegExp(`^${groupId}/[0-9]+-[0-9a-f-]{36}\\.(jpg|png|gif|webp)$`, 'i');
+        if (!shape.test(path)) {
+            return NextResponse.json({ error: 'Invalid file path' }, { status: 400 });
+        }
+
+        const group = await getLiveGroup(groupId);
+        if (!group) {
+            return NextResponse.json({ success: true, alreadyGone: true });
+        }
+        if (!verifyRoomProof(group, extractProof(req, body))) {
+            return NextResponse.json({ error: 'Not allowed' }, { status: 403 });
+        }
+
+        const { error } = await supabaseAdmin.storage.from(MEDIA_BUCKET).remove([path]);
+        if (error) {
+            console.error('Failed to delete image:', error);
+            return NextResponse.json({ error: 'Could not delete the image' }, { status: 500 });
+        }
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        console.error('Delete image error:', error);
+        return NextResponse.json({ error: 'Failed to delete file' }, { status: 500 });
+    }
+}

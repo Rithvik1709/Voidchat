@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/server/supabaseAdmin';
 import { hashProof, isUuid, maybeSweep } from '@/lib/server/groups';
-import { ALLOWED_EXPIRY_MINUTES, MAX_MEMBERS, MIN_MEMBERS } from '@/lib/roomOptions';
+import { ALLOWED_EXPIRY_MINUTES, MAX_BURN_SECONDS, MAX_MEMBERS, MIN_BURN_SECONDS, MIN_MEMBERS } from '@/lib/roomOptions';
 
 const MAX_GROUPS_PER_CREATOR = 10;
 const CREATE_LIMIT_PER_HOUR = 20;
@@ -25,7 +25,7 @@ function rateLimited(req: Request): boolean {
 
 const PUBLIC_COLUMNS = [
     'id', 'name', 'tags', 'active_user_count', 'created_at', 'last_active_at',
-    'key', 'expires_at', 'max_members', 'has_password',
+    'key', 'expires_at', 'max_members', 'has_password', 'invite_only', 'burn_seconds',
 ] as const;
 
 /** Never expose proof_hash or anything else outside the public column list. */
@@ -103,6 +103,18 @@ export async function POST(req: Request) {
             options.has_password = true;
         }
 
+        if (body.invite_only === true) {
+            options.invite_only = true;
+        }
+
+        if (body.burn_seconds !== undefined && body.burn_seconds !== null) {
+            const n = body.burn_seconds;
+            if (!Number.isInteger(n) || n < MIN_BURN_SECONDS || n > MAX_BURN_SECONDS) {
+                return NextResponse.json({ error: `Burn time must be a whole number of at least ${MIN_BURN_SECONDS} seconds.` }, { status: 400 });
+            }
+            options.burn_seconds = n;
+        }
+
         if (rateLimited(req)) {
             return NextResponse.json({ error: 'Too many rooms created. Try again later.' }, { status: 429 });
         }
@@ -143,7 +155,7 @@ export async function POST(req: Request) {
         if (error && isMissingColumn(error.code) && wantsOptions) {
             console.warn('Room option columns are missing. Run migrations/room_options.sql.');
             return NextResponse.json(
-                { error: 'Room options are not enabled yet: the database needs migrations/room_options.sql.' },
+                { error: 'Room options are not enabled yet: the database needs migrations/room_options.sql (plus migrations/invites.sql for one-time links and migrations/burn_mode.sql for burn mode).' },
                 { status: 503 }
             );
         }

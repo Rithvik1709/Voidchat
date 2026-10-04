@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { POST } from '@/app/api/upload/route';
+import { DELETE, POST } from '@/app/api/upload/route';
 import { getDb } from '../helpers/api';
 import { hashProof } from '@/lib/server/groups';
 
@@ -79,5 +79,64 @@ describe('POST /api/upload', () => {
     const g = db.seedGroup({ proof_hash: hashProof(proof) });
     for (let i = 0; i < 50; i++) db.seedFile(g.id);
     expect((await upload({ groupId: g.id, proof })).status).toBe(429);
+  });
+});
+
+describe('DELETE /api/upload (an image whose message burned)', () => {
+  const removeFile = (body: unknown, headers: Record<string, string> = {}) =>
+    DELETE(new Request('http://localhost/api/upload', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+    }));
+
+  const fileName = () => `${Date.now()}-${crypto.randomUUID()}.png`;
+
+  it('lets a member delete a file in their room', async () => {
+    const db = await getDb();
+    const g = db.seedGroup({ proof_hash: hashProof(proof) });
+    const name = db.seedFile(g.id, 0, fileName());
+    const keep = db.seedFile(g.id, 0, fileName());
+    const res = await removeFile({ groupId: g.id, path: `${g.id}/${name}`, proof });
+    expect(res.status).toBe(200);
+    expect(db.files[g.id].map(f => f.name)).toEqual([keep]);
+  });
+
+  it('accepts the proof in a header too', async () => {
+    const db = await getDb();
+    const g = db.seedGroup({ proof_hash: hashProof(proof) });
+    const name = db.seedFile(g.id, 0, fileName());
+    expect((await removeFile({ groupId: g.id, path: `${g.id}/${name}` }, { 'x-room-proof': proof })).status).toBe(200);
+    expect(db.files[g.id]).toHaveLength(0);
+  });
+
+  it('refuses callers without the proof, and leaves the file', async () => {
+    const db = await getDb();
+    const g = db.seedGroup({ proof_hash: hashProof(proof) });
+    const name = db.seedFile(g.id, 0, fileName());
+    expect((await removeFile({ groupId: g.id, path: `${g.id}/${name}` })).status).toBe(403);
+    expect((await removeFile({ groupId: g.id, path: `${g.id}/${name}`, proof: '9'.repeat(64) })).status).toBe(403);
+    expect(db.files[g.id]).toHaveLength(1);
+  });
+
+  it('only deletes files shaped like ones this server made, inside the named room', async () => {
+    const db = await getDb();
+    const g = db.seedGroup({ proof_hash: hashProof(proof) });
+    const other = db.seedGroup({ proof_hash: hashProof(proof) });
+    const theirs = db.seedFile(other.id, 0, fileName());
+    for (const path of [`${other.id}/${theirs}`, `${g.id}/../${other.id}/${theirs}`, `${g.id}/anything.png`, `${g.id}/`, '../x', `${g.id}/${fileName().replace('.png', '.svg')}`]) {
+      const res = await removeFile({ groupId: g.id, path, proof });
+      expect(res.status, path).toBe(400);
+    }
+    expect(db.files[other.id]).toHaveLength(1);
+  });
+
+  it('rejects malformed requests and treats a vanished room as already done', async () => {
+    expect((await removeFile({ groupId: 'nope', path: 'x', proof })).status).toBe(400);
+    expect((await removeFile({ groupId: crypto.randomUUID() })).status).toBe(400);
+    const gone = crypto.randomUUID();
+    const res = await removeFile({ groupId: gone, path: `${gone}/${fileName()}`, proof });
+    expect(res.status).toBe(200);
+    expect((await res.json()).alreadyGone).toBe(true);
   });
 });

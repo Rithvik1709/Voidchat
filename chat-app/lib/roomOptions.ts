@@ -41,6 +41,10 @@ export type RoomOptions = {
     /** Server clock at page load, so countdowns are not thrown off by a wrong device clock */
     serverNow: string;
     maxMembers: number | null;
+    /** No reusable link: people get in only through one-time links */
+    inviteOnly: boolean;
+    /** Burn mode: messages vanish this many seconds after they appear */
+    burnSeconds: number | null;
 };
 
 export function formatCountdown(ms: number): string {
@@ -51,4 +55,28 @@ export function formatCountdown(ms: number): string {
     const mm = String(m).padStart(h > 0 ? 2 : 1, '0');
     const ss = String(s).padStart(2, '0');
     return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+/**
+ * Burn mode: how long a message stays before it burns. Anything from 5 seconds (the sand animation
+ * needs a moment to play) up to the largest value the database can store.
+ */
+export const MIN_BURN_SECONDS = 5;
+export const MAX_BURN_SECONDS = 2_147_483_647;
+export const DEFAULT_BURN_SECONDS = 30;
+
+export function parseBurnSeconds(text: string): { value: number | null; error: string | null } {
+    const trimmed = text.trim();
+    if (!/^\d+$/.test(trimmed)) return { value: null, error: 'Enter a whole number of seconds.' };
+    const n = Number(trimmed);
+    if (n < MIN_BURN_SECONDS) return { value: null, error: `At least ${MIN_BURN_SECONDS} seconds, so the sand has time to fall.` };
+    if (n > MAX_BURN_SECONDS) return { value: null, error: `That is too large. The most the database can store is ${MAX_BURN_SECONDS.toLocaleString()}.` };
+    return { value: n, error: null };
+}
+
+/** "30 seconds", "2 minutes", "1 hour" for display. */
+export function describeBurn(seconds: number): string {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.round((seconds / 60) * 10) / 10}m`.replace('.0', '');
+    return `${Math.round((seconds / 3600) * 10) / 10}h`.replace('.0', '');
 }

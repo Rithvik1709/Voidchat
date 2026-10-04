@@ -53,6 +53,8 @@ async function lookupGroup(groupId: string): Promise<Lookup> {
                 expiresAt: data.expires_at ?? null,
                 serverNow: new Date().toISOString(),
                 maxMembers: data.max_members ?? null,
+                inviteOnly: Boolean(data.invite_only),
+                burnSeconds: typeof data.burn_seconds === 'number' ? data.burn_seconds : null,
             },
         };
     } catch (error) {

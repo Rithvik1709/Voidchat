@@ -16,6 +16,8 @@ export type GroupRow = {
     expires_at?: string | null;
     max_members?: number | null;
     has_password?: boolean | null;
+    invite_only?: boolean | null;
+    burn_seconds?: number | null;
 };
 
 export const isExpired = (group: Pick<GroupRow, 'expires_at'>, now = Date.now()) =>

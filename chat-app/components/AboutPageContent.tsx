@@ -26,9 +26,9 @@ const features = [
         icon: TimerOff,
     },
     {
-        title: "Invite instantly",
+        title: "One-time links",
         description:
-            "Share a single link to bring people in. No logins, no friction. Just start talking.",
+            "Share a link and start talking, or make a one-time link per person that burns after a single use. The key is handed over encrypted, so a copied link is worthless.",
         icon: Link2,
     },
     {

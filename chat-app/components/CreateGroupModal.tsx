@@ -6,9 +6,9 @@ import { Button, Input } from './ui/basic';
 import { generateKey, exportKey } from '@/lib/crypto';
 import { getRoomProof, saveRoomKey } from '@/lib/roomAuth';
 import {
-    EXPIRY_CHOICES, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, parseMemberLimit,
+    DEFAULT_BURN_SECONDS, EXPIRY_CHOICES, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, describeBurn, parseBurnSeconds, parseMemberLimit,
 } from '@/lib/roomOptions';
-import { ArrowRight, Check, ChevronDown, Copy, KeyRound, Loader2, Lock, QrCode as QrIcon, Timer, Users, X } from 'lucide-react';
+import { ArrowRight, Check, ChevronDown, Copy, Flame, KeyRound, Loader2, Lock, QrCode as QrIcon, Timer, Users, X } from 'lucide-react';
 import QrCode from './QrCode';
 import { cn } from '@/lib/utils';
 
@@ -19,20 +19,25 @@ export default function CreateGroupModal({ onClose, creatorId, onSuccess }: { on
     const [password, setPassword] = useState('');
     const [expiryMinutes, setExpiryMinutes] = useState<number | null>(null);
     const [limitText, setLimitText] = useState('');
+    const [inviteOnly, setInviteOnly] = useState(false);
+    const [burnOn, setBurnOn] = useState(false);
+    const [burnText, setBurnText] = useState(String(DEFAULT_BURN_SECONDS));
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
     const [shareLink, setShareLink] = useState('');
-    const [created, setCreated] = useState<{ hasPassword: boolean; expiryLabel: string | null; maxMembers: number | null } | null>(null);
+    const [created, setCreated] = useState<{ hasPassword: boolean; expiryLabel: string | null; maxMembers: number | null; inviteOnly: boolean; burnSeconds: number | null } | null>(null);
     const [showQr, setShowQr] = useState(false);
     const [copied, setCopied] = useState(false);
     const router = useRouter();
 
     const passwordTooShort = password.length > 0 && password.length < MIN_PASSWORD_LENGTH;
     const { value: maxMembers, error: limitError } = parseMemberLimit(limitText);
+    const { value: burnSeconds, error: burnParseError } = parseBurnSeconds(burnText);
+    const burnError = burnOn ? burnParseError : null;
 
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!name.trim() || passwordTooShort || limitError) return;
+        if (!name.trim() || passwordTooShort || limitError || burnError) return;
 
         setIsLoading(true);
         setError('');
@@ -51,6 +56,8 @@ export default function CreateGroupModal({ onClose, creatorId, onSuccess }: { on
                     expires_in_minutes: expiryMinutes,
                     max_members: maxMembers,
                     password_protected: password.length > 0,
+                    invite_only: inviteOnly,
+                    burn_seconds: burnOn ? burnSeconds : null,
                 })
             });
 
@@ -69,6 +76,8 @@ export default function CreateGroupModal({ onClose, creatorId, onSuccess }: { on
                 hasPassword: password.length > 0,
                 expiryLabel: EXPIRY_CHOICES.find(c => c.minutes === expiryMinutes)?.label ?? null,
                 maxMembers,
+                inviteOnly,
+                burnSeconds: burnOn ? burnSeconds : null,
             });
             setIsLoading(false);
         } catch (err) {
@@ -170,9 +179,9 @@ export default function CreateGroupModal({ onClose, creatorId, onSuccess }: { on
                             >
                                 <span className="flex items-center gap-2">
                                     Room options
-                                    {(password || expiryMinutes || maxMembers) && (
+                                    {(password || expiryMinutes || maxMembers || inviteOnly || burnOn) && (
                                         <span className="rounded-full bg-foreground px-2 py-0.5 font-mono text-[10px] text-background">
-                                            {[password && 'password', expiryMinutes && 'timer', maxMembers && 'limit'].filter(Boolean).length} on
+                                            {[password && 'password', expiryMinutes && 'timer', maxMembers && 'limit', inviteOnly && 'invites', burnOn && 'burn'].filter(Boolean).length} on
                                         </span>
                                     )}
                                 </span>
@@ -181,6 +190,58 @@ export default function CreateGroupModal({ onClose, creatorId, onSuccess }: { on
 
                             {showOptions && (
                                 <div className="space-y-5 border-t border-border p-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                                    <div className="space-y-2">
+                                        <span className={cn(labelCls, 'flex items-center gap-1.5')}>
+                                            <Flame className="h-3 w-3" /> Links
+                                        </span>
+                                        <div className="grid grid-cols-2 gap-1 rounded-full border border-border p-1 text-xs font-semibold">
+                                            <button className={cn('rounded-full py-2 transition-colors', !inviteOnly ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground')} onClick={() => setInviteOnly(false)} type="button">
+                                                Reusable link
+                                            </button>
+                                            <button className={cn('rounded-full py-2 transition-colors', inviteOnly ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground')} onClick={() => setInviteOnly(true)} type="button">
+                                                One-time links only
+                                            </button>
+                                        </div>
+                                        <p className="ml-2 text-xs text-muted-foreground">
+                                            {inviteOnly
+                                                ? 'No shareable room link. Inside the room you make a link per person, and each one burns after it is used.'
+                                                : 'One link anyone can use. You can still make one-time links later.'}
+                                        </p>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <span className={cn(labelCls, 'flex items-center gap-1.5')}>
+                                            <Flame className="h-3 w-3" /> Burn mode
+                                        </span>
+                                        <div className="grid grid-cols-2 gap-1 rounded-full border border-border p-1 text-xs font-semibold">
+                                            <button className={cn('rounded-full py-2 transition-colors', !burnOn ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground')} onClick={() => setBurnOn(false)} type="button">
+                                                Off
+                                            </button>
+                                            <button className={cn('rounded-full py-2 transition-colors', burnOn ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground')} onClick={() => setBurnOn(true)} type="button">
+                                                Messages burn
+                                            </button>
+                                        </div>
+                                        {burnOn && (
+                                            <div className="flex items-center gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                                                <Input
+                                                    aria-label="Seconds until a message burns"
+                                                    inputMode="numeric"
+                                                    autoComplete="off"
+                                                    value={burnText}
+                                                    onChange={e => setBurnText(e.target.value)}
+                                                    aria-invalid={Boolean(burnError)}
+                                                    className={cn(inputCls, 'w-28 text-center', burnError && 'border-destructive')}
+                                                />
+                                                <span className="text-sm text-muted-foreground">seconds</span>
+                                            </div>
+                                        )}
+                                        <p className={cn('ml-2 text-xs', burnError ? 'text-destructive' : 'text-muted-foreground')} role={burnError ? 'alert' : undefined}>
+                                            {burnError ?? (burnOn && burnSeconds
+                                                ? `Every message turns to sand ${describeBurn(burnSeconds)} after it appears, for everyone.`
+                                                : 'Messages stay until the room ends.')}
+                                        </p>
+                                    </div>
+
                                     <div className="space-y-2">
                                         <label className={cn(labelCls, 'flex items-center gap-1.5')} htmlFor="group-password">
                                             <KeyRound className="h-3 w-3" /> Password
@@ -245,7 +306,34 @@ export default function CreateGroupModal({ onClose, creatorId, onSuccess }: { on
                         </p>
                     )}
 
-                    {shareLink && created && (
+                    {shareLink && created && created.inviteOnly && (
+                        <div className="space-y-3 rounded-2xl border border-border bg-background/60 p-4 animate-in slide-in-from-bottom-2 fade-in duration-300">
+                            <p className="flex gap-2 text-sm leading-relaxed text-muted-foreground">
+                                <Flame className="mt-0.5 h-4 w-4 shrink-0 text-foreground" />
+                                <span>
+                                    This room has <strong className="text-foreground">no reusable link</strong>. Open it, then use the
+                                    <strong className="text-foreground"> Invite</strong> button to make a one-time link for each person.
+                                    Each link works once and then burns.
+                                </span>
+                            </p>
+                            <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                                {created.hasPassword && <span className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1"><KeyRound className="h-3 w-3" /> Password: share it separately</span>}
+                                {created.expiryLabel && created.expiryLabel !== 'Never' && <span className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1"><Timer className="h-3 w-3" /> Closes in {created.expiryLabel}</span>}
+                                {created.maxMembers && <span className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1"><Users className="h-3 w-3" /> Up to {created.maxMembers}</span>}
+                                    {created.burnSeconds && <span className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1"><Flame className="h-3 w-3" /> Messages burn after {describeBurn(created.burnSeconds)}</span>}
+                            </div>
+                            <Button
+                                type="button"
+                                onClick={() => router.push(shareLink.replace(window.location.origin, ''))}
+                                className="group h-11 w-full rounded-full bg-foreground font-bold text-background hover:bg-foreground/90"
+                            >
+                                Open group
+                                <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                            </Button>
+                        </div>
+                    )}
+
+                    {shareLink && created && !created.inviteOnly && (
                         <div className="space-y-3 rounded-2xl border border-border bg-background/60 p-4 animate-in slide-in-from-bottom-2 fade-in duration-300">
                             <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
                                 Invite link
@@ -268,11 +356,12 @@ export default function CreateGroupModal({ onClose, creatorId, onSuccess }: { on
                                 </Button>
                             </div>
 
-                            {(created.hasPassword || created.expiryLabel || created.maxMembers) && (
+                            {(created.hasPassword || created.expiryLabel || created.maxMembers || created.burnSeconds) && (
                                 <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                                     {created.hasPassword && <span className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1"><KeyRound className="h-3 w-3" /> Password: share it separately</span>}
                                     {created.expiryLabel && created.expiryLabel !== 'Never' && <span className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1"><Timer className="h-3 w-3" /> Closes in {created.expiryLabel}</span>}
                                     {created.maxMembers && <span className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1"><Users className="h-3 w-3" /> Up to {created.maxMembers}</span>}
+                                    {created.burnSeconds && <span className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1"><Flame className="h-3 w-3" /> Messages burn after {describeBurn(created.burnSeconds)}</span>}
                                 </div>
                             )}
 
@@ -317,7 +406,7 @@ export default function CreateGroupModal({ onClose, creatorId, onSuccess }: { on
                         {!shareLink && (
                             <Button
                                 type="submit"
-                                disabled={isLoading || !name.trim() || passwordTooShort || Boolean(limitError)}
+                                disabled={isLoading || !name.trim() || passwordTooShort || Boolean(limitError) || Boolean(burnError)}
                                 className="h-12 rounded-full bg-foreground px-8 font-bold text-background transition-transform hover:scale-[1.03] hover:bg-foreground active:scale-95 disabled:opacity-50"
                             >
                                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

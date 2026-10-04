@@ -429,8 +429,8 @@ const FEATURES = [
   },
   {
     icon: Link2,
-    title: "Instant invites",
-    body: "One link brings people in. No logins, no friction.",
+    title: "Links that burn",
+    body: "Make a one-time link per person. It works once, then it is dead, even if someone copied it.",
     span: "",
   },
   {
@@ -482,7 +482,7 @@ const FAQ = [
   },
   {
     q: "How do I invite people?",
-    a: "Copy the room link and send it to them. They can join straight from their browser.",
+    a: "Share the room link, or make a one-time link for each person from the Invite button. A one-time link works for a single person and then burns, so a forwarded or copied link can't be reused. They join straight from their browser.",
   },
 ];
 

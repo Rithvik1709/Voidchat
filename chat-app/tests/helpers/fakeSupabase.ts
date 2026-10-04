@@ -8,6 +8,13 @@ type Result = { data: any; error: any; count?: number | null };
 
 const toTime = (v: unknown) => (typeof v === 'string' ? Date.parse(v) : NaN);
 
+/** Compare numbers numerically and ISO timestamps chronologically; anything else is "unknown". */
+const compare = (a: unknown, b: unknown): number | null => {
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  const x = toTime(a), y = toTime(b);
+  return Number.isNaN(x) || Number.isNaN(y) ? null : x - y;
+};
+
 class Query implements PromiseLike<Result> {
   private op: 'select' | 'insert' | 'update' | 'delete' = 'select';
   private filters: ((r: Row) => boolean)[] = [];
@@ -32,9 +39,12 @@ class Query implements PromiseLike<Result> {
   delete() { this.op = 'delete'; this.wantsRows = false; return this; }
 
   eq(col: string, val: unknown) { this.filters.push(r => r[col] === val); return this; }
-  lt(col: string, val: string) { this.filters.push(r => toTime(r[col]) < toTime(val)); return this; }
-  lte(col: string, val: number) { this.filters.push(r => typeof r[col] === 'number' && r[col] <= val); return this; }
-  gt(col: string, val: number) { this.filters.push(r => typeof r[col] === 'number' && r[col] > val); return this; }
+  neq(col: string, val: unknown) { this.filters.push(r => r[col] !== val); return this; }
+  in(col: string, vals: unknown[]) { this.filters.push(r => vals.includes(r[col])); return this; }
+  lt(col: string, val: string | number) { this.filters.push(r => (compare(r[col], val) ?? 1) < 0); return this; }
+  lte(col: string, val: string | number) { this.filters.push(r => (compare(r[col], val) ?? 1) <= 0); return this; }
+  gt(col: string, val: string | number) { this.filters.push(r => (compare(r[col], val) ?? -1) > 0); return this; }
+  gte(col: string, val: string | number) { this.filters.push(r => (compare(r[col], val) ?? -1) >= 0); return this; }
   not(col: string, op: string, val: unknown) {
     if (op === 'is') this.filters.push(r => (val === null ? r[col] != null : r[col] !== val));
     return this;
@@ -49,6 +59,9 @@ class Query implements PromiseLike<Result> {
   }
 
   private execute(): Result {
+    if (this.db.missingTables.has(this.table)) {
+      return { data: null, error: { code: 'PGRST205', message: `Could not find the table '${this.table}' in the schema cache` } };
+    }
     const rows = this.db.tables[this.table] ?? (this.db.tables[this.table] = []);
     const matches = () => rows.filter(r => this.filters.every(f => f(r)));
 
@@ -60,11 +73,14 @@ class Query implements PromiseLike<Result> {
             return { data: null, error: { code: 'PGRST204', message: `Could not find the '${col}' column of '${this.table}' in the schema cache` } };
           }
         }
+        // column defaults, like the real tables
+        const defaults: Row = this.table === 'group_invites'
+          ? { status: 'unused', claimed_at: null, claim_pub: null, claim_mac: null, delivery: null, used_at: null }
+          : { last_active_at: new Date().toISOString(), active_user_count: 0 };
         const row: Row = {
           id: crypto.randomUUID(),
           created_at: new Date().toISOString(),
-          last_active_at: new Date().toISOString(),
-          active_user_count: 0,
+          ...defaults,
           ...input,
         };
         rows.push(row);
@@ -82,6 +98,10 @@ class Query implements PromiseLike<Result> {
     if (this.op === 'delete') {
       const hit = matches();
       this.db.tables[this.table] = rows.filter(r => !hit.includes(r));
+      if (this.table === 'groups') {
+        const gone = new Set(hit.map(r => r.id));
+        this.db.tables.group_invites = (this.db.tables.group_invites ?? []).filter(i => !gone.has(i.group_id));
+      }
       return this.finish(hit);
     }
 
@@ -113,10 +133,12 @@ export class FakeSupabase {
   tables: Record<string, Row[]> = {};
   files: Record<string, { name: string; created_at: string }[]> = {}; // folder -> files
   missingColumns = new Set<string>();
+  missingTables = new Set<string>();
   hasTryJoin = true;
 
   reset() {
-    this.tables = { groups: [], site_visits: [] };
+    this.tables = { groups: [], site_visits: [], group_invites: [] };
+    this.missingTables = new Set();
     this.files = {};
     this.missingColumns = new Set();
     this.hasTryJoin = true;
