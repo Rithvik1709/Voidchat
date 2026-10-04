@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Nullchat</title>
+  <style>
+    .tile { fill: #0a0a0a; }
+    .bubble { fill: #fafafa; }
+    .hole { fill: #0a0a0a; }
+    /* Browsers with a dark tab strip get the inverted mark */
+    @media (prefers-color-scheme: dark) {
+      .tile { fill: #fafafa; }
+      .bubble { fill: #0a0a0a; }
+      .hole { fill: #fafafa; }
+    }
+  </style>
+  <rect class="tile" width="64" height="64" rx="15"/>
+  <path class="bubble" d="M32 10.5a21.5 21.5 0 1 1-10.6 40.2L12.5 54l3.6-8.6A21.5 21.5 0 0 1 32 10.5Z"/>
+  <circle class="hole" cx="32" cy="32" r="7.5"/>
+</svg>
