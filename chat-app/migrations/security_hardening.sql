@@ -17,6 +17,7 @@
 -- =====================================================================================
 
 -- 1. Proof column -------------------------------------------------------------------
+-- (Also available on its own as proof_hash.sql, which is safe to run before everything else.)
 alter table public.groups add column if not exists proof_hash text;
 
 -- 2. Stop keeping room keys in the database ------------------------------------------
