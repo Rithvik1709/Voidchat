@@ -151,11 +151,11 @@ export default function Story() {
 
   return (
     <div className="relative h-[330vh]" id="how" ref={ref}>
-      <div className="sticky top-0 flex h-screen items-center overflow-hidden">
+      <div className="sticky top-0 flex h-[100svh] items-center overflow-hidden pt-14 lg:pt-0">
         <Spot />
-        <div className="mx-auto grid w-full max-w-7xl items-center gap-8 px-5 sm:px-8 lg:grid-cols-[0.8fr_1.4fr] lg:gap-16">
+        <div className="mx-auto grid w-full max-w-7xl items-center gap-5 px-5 sm:px-8 lg:grid-cols-[0.8fr_1.4fr] lg:gap-16">
           <div className="relative flex gap-5">
-            <div className="relative hidden w-7 shrink-0 sm:block">
+            <div className="relative hidden w-7 shrink-0 lg:block">
               <div className="absolute inset-y-0 left-1/2 w-7 -translate-x-1/2 rounded-full border border-white/10 bg-white/[0.04]" />
               <motion.div
                 animate={{ top: `${6 + active * 33}%` }}
@@ -163,9 +163,9 @@ export default function Story() {
                 transition={{ type: "spring", stiffness: 160, damping: 22 }}
               />
             </div>
-            <div className="space-y-6">
+            <div className="lg:space-y-6">
               {STEPS.map((s, i) => (
-                <div className={`transition-opacity duration-500 ${i === active ? "opacity-100" : "opacity-30"}`} key={s.title}>
+                <div className={`transition-opacity duration-500 ${i === active ? "opacity-100" : "hidden opacity-30 lg:block"}`} key={s.title}>
                   <div className="font-mono text-[11px] uppercase tracking-[0.25em] text-white/40">0{i + 1}</div>
                   <h3 className="mt-1 text-2xl font-medium leading-tight tracking-[-0.03em] text-white md:text-4xl">{s.title}</h3>
                   <motion.p
@@ -177,15 +177,20 @@ export default function Story() {
                   </motion.p>
                 </div>
               ))}
+              <div className="mt-4 flex gap-1.5 lg:hidden">
+                {STEPS.map((s, i) => (
+                  <span className={`h-1 rounded-full transition-all duration-500 ${i === active ? "w-8 bg-white" : "w-4 bg-white/20"}`} key={s.title} />
+                ))}
+              </div>
             </div>
           </div>
 
-          <div className="relative">
+          <div className="relative min-w-0">
             <Note arrow="left" className="-top-10 right-6" color="#8fd3ff">
               no signup, ever
             </Note>
             <AppWindow sidebar status={active === 2 ? "Live" : "Ready"} url={STEPS[active].url}>
-              <div className="relative min-h-[26rem] md:min-h-[31rem]">
+              <div className="relative min-h-[23rem] md:min-h-[31rem]">
                 <AnimatePresence mode="wait">
                   <motion.div key={active} {...fade}>
                     {panels[active]}

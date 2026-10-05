@@ -206,7 +206,7 @@ export default function HomePage() {
         </motion.div>
 
         <motion.div
-          className="absolute inset-x-0 bottom-0 h-[64%] min-h-[20rem] [mask-image:linear-gradient(to_bottom,transparent,black_22%)]"
+          className="absolute inset-x-0 bottom-0 h-[46%] min-h-[16rem] sm:h-[64%] sm:min-h-[20rem] [mask-image:linear-gradient(to_bottom,transparent,black_22%)]"
           style={{ y: sceneY }}
         >
           <Image alt="" className="object-cover object-bottom" fill priority sizes="100vw" src="/landing/scene-hero.webp" />
