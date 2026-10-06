@@ -1,4 +1,7 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useRef, type ReactNode } from "react";
+import { motion, useReducedMotion, useScroll, useTransform, type MotionValue } from "framer-motion";
 import { LayoutGrid, Link2, MessageSquare, Settings, Shield, Timer, Users } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -114,22 +117,115 @@ export function Heading({
   soft,
   sub,
   align = "center",
+  still = false,
 }: {
   strong: string;
   soft: string;
   sub?: string;
   align?: "center" | "right" | "left";
+  /** skip the word-by-word reveal (for headings a parent already animates) */
+  still?: boolean;
 }) {
   const a = align === "center" ? "text-center mx-auto" : align === "right" ? "text-right ml-auto" : "text-left";
   return (
     <div className={`max-w-3xl ${a}`}>
       <h2 className="text-[2.5rem] font-medium leading-[1.0] tracking-[-0.05em] text-white md:text-[4rem]">
-        {strong}
+        {still ? strong : <ScrollWords text={strong} />}
         <br />
-        <span className="bg-gradient-to-b from-white/55 to-white/30 bg-clip-text text-transparent">{soft}</span>
+        {still ? (
+          <span className="bg-gradient-to-b from-white/55 to-white/30 bg-clip-text text-transparent">{soft}</span>
+        ) : (
+          <ScrollWords className="text-white/45" from={0.08} text={soft} />
+        )}
       </h2>
       {sub && <p className="mt-5 text-base text-white/50 md:text-lg">{sub}</p>}
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Scroll-linked motion                                                */
+/* ------------------------------------------------------------------ */
+
+function Word({ p, range, from, children }: { p: MotionValue<number>; range: [number, number]; from: number; children: string }) {
+  const opacity = useTransform(p, range, [from, 1]);
+  const y = useTransform(p, range, [8, 0]);
+  return (
+    <motion.span className="inline-block" style={{ opacity, y }}>
+      {children}
+    </motion.span>
+  );
+}
+
+/** Words brighten one after another as the line scrolls up the screen. */
+export function ScrollWords({ text, className = "", from = 0.15 }: { text: string; className?: string; from?: number }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const reduce = useReducedMotion();
+  const { scrollYProgress } = useScroll({ target: ref, offset: ["start 0.92", "start 0.5"] });
+  if (reduce) return <span className={className}>{text}</span>;
+  const words = text.split(" ");
+  return (
+    <span className={className} ref={ref}>
+      {words.map((w, i) => (
+        <span key={i}>
+          <Word from={from} p={scrollYProgress} range={[i / words.length, Math.min(1, (i + 1.6) / words.length)]}>
+            {w}
+          </Word>
+          {i < words.length - 1 && " "}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** Rises and tilts up into place, tied to scroll position rather than a timer. */
+export function ScrollRise({ children, className = "", lag = 0 }: { children: ReactNode; className?: string; lag?: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const reduce = useReducedMotion();
+  const { scrollYProgress: p } = useScroll({ target: ref, offset: ["start end", "start 0.62"] });
+  const y = useTransform(p, [0, 1], [110 + lag * 70, 0]);
+  const rotateX = useTransform(p, [0, 1], [16, 0]);
+  const scale = useTransform(p, [0, 1], [0.92, 1]);
+  const opacity = useTransform(p, [0, 0.55], [0, 1]);
+  return (
+    <div className={className} ref={ref} style={{ perspective: 1400 }}>
+      <motion.div className="h-full" style={reduce ? undefined : { y, rotateX, scale, opacity, transformOrigin: "50% 100%" }}>
+        {children}
+      </motion.div>
+    </div>
+  );
+}
+
+function SandChar({ p, i, n, char }: { p: MotionValue<number>; i: number; n: number; char: string }) {
+  // scrambled order so the line erodes from random spots instead of left to right
+  const v = Math.sin(i * 91.7 + n) * 43758.5453;
+  const order = +(v - Math.floor(v)).toFixed(3);
+  const start = 0.46 + order * 0.2;
+  const end = start + 0.12;
+  const opacity = useTransform(p, [0.08, 0.28, start, end], [0, 1, 1, 0]);
+  const y = useTransform(p, [start, end], [0, -18 - order * 26]);
+  const x = useTransform(p, [start, end], [0, (order - 0.5) * 30]);
+  const filter = useTransform(p, [start, end], ["blur(0px)", "blur(10px)"]);
+  if (char === " ") return <span> </span>;
+  return (
+    <motion.span className="inline-block" style={{ opacity, y, x, filter }}>
+      {char}
+    </motion.span>
+  );
+}
+
+/** Fades in, then dissolves letter by letter like sand as it scrolls away. */
+export function VanishText({ text, className = "" }: { text: string; className?: string }) {
+  const ref = useRef<HTMLHeadingElement>(null);
+  const reduce = useReducedMotion();
+  const { scrollYProgress } = useScroll({ target: ref, offset: ["start end", "end start"] });
+  if (reduce) return <h2 className={className}>{text}</h2>;
+  return (
+    <h2 aria-label={text} className={className} ref={ref}>
+      {text.split("").map((c, i) => (
+        <SandChar char={c} i={i} key={i} n={text.length} p={scrollYProgress} />
+      ))}
+    </h2>
   );
 }
 
@@ -181,7 +277,7 @@ export function Hatch({ className = "" }: { className?: string }) {
 }
 
 /** A bundle of flowing threads, like a long exposure of the conversation. */
-export function Threads({ className = "" }: { className?: string }) {
+export function Threads({ className = "", progress }: { className?: string; progress?: MotionValue<number> }) {
   const lines = Array.from({ length: 42 }, (_, i) => {
     const k = i / 41;
     const amp = 70 + 120 * Math.sin(k * Math.PI);
@@ -205,7 +301,7 @@ export function Threads({ className = "" }: { className?: string }) {
         </linearGradient>
       </defs>
       {lines.map((l, i) => (
-        <path d={l.d} key={i} stroke="url(#thread-fade)" strokeOpacity={l.o} strokeWidth="0.8" />
+        <motion.path d={l.d} key={i} stroke="url(#thread-fade)" strokeOpacity={l.o} strokeWidth="0.8" style={progress ? { pathLength: progress } : undefined} />
       ))}
     </svg>
   );

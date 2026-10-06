@@ -25,7 +25,7 @@ import { FAQ, USE_CASES } from "@/lib/siteContent";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
-import { Hatch, Heading, Note, Rings, Spot, Threads } from "@/components/landing/parts";
+import { Hatch, Heading, Note, Rings, ScrollRise, ScrollWords, Spot, Threads } from "@/components/landing/parts";
 
 function Reveal({ children, delay = 0, className }: { children: React.ReactNode; delay?: number; className?: string }) {
   return (
@@ -153,6 +153,7 @@ export function Spotlight() {
 
         <motion.div className="relative" style={{ opacity: at(headO, 1), y: at(headY, 0) }}>
           <Heading
+            still
             soft="Nothing is stored."
             strong="Talk without a trail."
             sub="Nullchat keeps nothing once the room ends, and the room only exists while you're in it."
@@ -223,14 +224,15 @@ function BurnMock() {
         <span className="rounded-full border border-amber-400/30 px-2 py-0.5 text-amber-300">sand in 04:59</span>
       </div>
       <div className="space-y-2">
-        {msgs.map((m) => (
+        {msgs.map((m, i) => (
           <div className={m.me ? "flex justify-end" : "flex"} key={m.t}>
-            <span
+            <motion.span
+              animate={{ opacity: [1, 1, m.o, m.o, 1], filter: ["blur(0px)", "blur(0px)", `blur(${m.b + 1}px)`, `blur(${m.b + 1}px)`, "blur(0px)"], y: [0, 0, -2, -2, 0] }}
               className={`rounded-2xl px-3.5 py-2 text-xs ${m.me ? "bg-white text-black" : "bg-white/10 text-white"}`}
-              style={{ opacity: m.o, filter: `blur(${m.b}px)` }}
+              transition={{ duration: 5, delay: i * 0.5, ease: "easeInOut", repeat: Infinity, times: [0, 0.25, 0.5, 0.85, 1] }}
             >
               {m.t}
-            </span>
+            </motion.span>
           </div>
         ))}
       </div>
@@ -325,19 +327,17 @@ export function Bento() {
     <section className="relative overflow-hidden border-t border-white/[0.06] py-24 md:py-36" id="features">
       <Spot />
       <div className={wrap}>
-        <Reveal>
-          <Heading align="right" soft="to stay private" strong="Everything your room needs" />
-        </Reveal>
+        <Heading align="right" soft="to stay private" strong="Everything your room needs" />
         <div className="mt-14 grid gap-4 md:grid-cols-2">
           {BENTO.map((b, i) => (
-            <Reveal delay={(i % 2) * 0.1} key={b.title}>
+            <ScrollRise key={b.title} lag={i % 2}>
               <div className="relative h-full overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.05] to-white/[0.01] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)] transition-colors duration-500 hover:border-white/20 md:p-6">
                 <Hatch className={i % 2 ? "-left-2 top-6 h-44 w-12" : "-right-2 top-6 h-44 w-12"} />
                 <div className="relative">{b.mock}</div>
                 <h3 className="mt-6 text-xl font-medium tracking-[-0.02em] text-white">{b.title}</h3>
                 <p className="mt-2 max-w-md text-sm leading-relaxed text-white/45">{b.body}</p>
               </div>
-            </Reveal>
+            </ScrollRise>
           ))}
         </div>
       </div>
@@ -359,9 +359,7 @@ export function Capabilities() {
   return (
     <section className="py-12 md:py-20">
       <div className={wrap}>
-        <Reveal>
-          <Heading align="left" soft="nothing you don't." strong="Everything you need," />
-        </Reveal>
+        <Heading align="left" soft="nothing you don't." strong="Everything you need," />
         <div className="mt-12 space-y-8">
           {GROUPS.map((g) => (
             <Reveal key={g.label}>
@@ -369,14 +367,27 @@ export function Capabilities() {
                 {g.label}
                 <span className="h-px flex-1 bg-white/[0.08]" />
               </div>
-              <div className="grid grid-cols-2 border border-white/[0.08] md:grid-cols-4">
+              <motion.div
+                className="grid grid-cols-2 border border-white/[0.08] md:grid-cols-4"
+                initial="off"
+                transition={{ staggerChildren: 0.09 }}
+                viewport={{ once: true, margin: "-60px" }}
+                whileInView="on"
+              >
                 {g.items.map(([Icon, label]) => (
-                  <div className="flex items-center gap-3 border-b border-r border-white/[0.08] px-5 py-5 text-sm text-white transition-colors hover:bg-white/[0.04]" key={label}>
+                  <motion.div
+                    className="flex items-center gap-3 border-b border-r border-white/[0.08] px-5 py-5 text-sm text-white transition-colors hover:bg-white/[0.04]"
+                    key={label}
+                    variants={{
+                      off: { opacity: 0.15, backgroundColor: "rgba(255,255,255,0)" },
+                      on: { opacity: 1, backgroundColor: ["rgba(255,255,255,0.09)", "rgba(255,255,255,0)"], transition: { duration: 0.9 } },
+                    }}
+                  >
                     <Icon className="h-[18px] w-[18px] shrink-0 text-white/70" />
                     {label}
-                  </div>
+                  </motion.div>
                 ))}
-              </div>
+              </motion.div>
             </Reveal>
           ))}
         </div>
@@ -393,12 +404,10 @@ export function UseCases() {
   return (
     <section className="border-t border-white/[0.06] py-24 md:py-36" id="use-cases">
       <div className={wrap}>
-        <Reveal>
-          <Heading strong="Conversations that" soft="shouldn't stick around." />
-        </Reveal>
+        <Heading strong="Conversations that" soft="shouldn't stick around." />
         <div className="mt-14 grid border border-white/[0.08] sm:grid-cols-2">
           {USE_CASES.map((u, i) => (
-            <Reveal className="border-b border-r border-white/[0.08]" delay={(i % 2) * 0.08} key={u.title}>
+            <ScrollRise className="border-b border-r border-white/[0.08]" key={u.title} lag={i % 2}>
               <article className="group h-full p-7 transition-colors hover:bg-white/[0.03] md:p-9">
                 <div className="mb-10 flex items-center justify-between font-mono text-[11px] text-white/35">
                   <span>0{i + 1}</span>
@@ -407,7 +416,7 @@ export function UseCases() {
                 <h3 className="mb-2 text-xl font-medium tracking-[-0.02em] text-white">{u.title}</h3>
                 <p className="text-sm leading-relaxed text-white/45">{u.body}</p>
               </article>
-            </Reveal>
+            </ScrollRise>
           ))}
         </div>
       </div>
@@ -428,17 +437,20 @@ const COMPARE: { label: string; them: boolean; us: boolean }[] = [
 ];
 
 export function Compare() {
+  const ref = useRef<HTMLElement>(null);
+  const { scrollYProgress } = useScroll({ target: ref, offset: ["start end", "center 0.45"] });
+  const draw = useTransform(scrollYProgress, [0.1, 1], [0, 1]);
   return (
-    <section className="relative overflow-hidden border-t border-white/[0.06] py-24 md:py-36">
-      <Threads className="-left-56 bottom-6 h-[26rem] w-[72rem] opacity-70 [mask-image:linear-gradient(to_bottom,transparent,black_35%,black_80%,transparent)]" />
+    <section className="relative overflow-hidden border-t border-white/[0.06] py-24 md:py-36" ref={ref}>
+      <Threads progress={draw} className="-left-56 bottom-6 h-[26rem] w-[72rem] opacity-70 [mask-image:linear-gradient(to_bottom,transparent,black_35%,black_80%,transparent)]" />
       <div className={`${wrap} relative grid items-center gap-14 lg:grid-cols-[0.9fr_1.1fr]`}>
         <Reveal>
           <h2 className="text-[2.5rem] font-medium leading-[1.0] tracking-[-0.05em] text-white md:text-[3.6rem]">
-            Most chat apps
+            <ScrollWords text="Most chat apps" />
             <br />
-            remember everything.
+            <ScrollWords text="remember everything." />
             <br />
-            <span className="bg-gradient-to-b from-white/55 to-white/30 bg-clip-text text-transparent">We forget on purpose.</span>
+            <ScrollWords className="text-white/45" from={0.08} text="We forget on purpose." />
           </h2>
           <p className="mt-6 max-w-md text-base text-white/50 md:text-lg">
             No phone number, no profile, no archive. Just a room that exists while you need it.
@@ -457,24 +469,37 @@ export function Compare() {
               <span className="w-14 text-center sm:w-20">Typical</span>
               <span className="w-14 text-center text-white sm:w-20">Nullchat</span>
             </div>
-            {COMPARE.map((row) => (
-              <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-6 border-b border-white/[0.07] px-5 py-5 transition-colors last:border-b-0 hover:bg-white/[0.02] sm:gap-x-10 sm:px-7" key={row.label}>
+            {COMPARE.map((row, i) => (
+              <motion.div
+                className="grid grid-cols-[1fr_auto_auto] items-center gap-x-6 border-b border-white/[0.07] px-5 py-5 transition-colors last:border-b-0 hover:bg-white/[0.02] sm:gap-x-10 sm:px-7"
+                initial={{ opacity: 0, x: 24 }}
+                key={row.label}
+                transition={{ delay: 0.15 + i * 0.1, duration: 0.5, ease: [0.21, 0.6, 0.35, 1] }}
+                viewport={{ once: true, margin: "-80px" }}
+                whileInView={{ opacity: 1, x: 0 }}
+              >
                 <span className="text-sm text-white sm:text-[15px]">{row.label}</span>
                 <span className="grid w-14 place-items-center text-white/50 sm:w-20">
                   {row.them ? <Check className="h-4 w-4" /> : <Minus className="h-4 w-4 opacity-40" />}
                 </span>
                 <span className="grid w-14 place-items-center sm:w-20">
                   {row.us ? (
-                    <span className="grid h-7 w-7 place-items-center rounded-full bg-white text-black shadow-[0_0_16px_rgba(255,255,255,0.35)]">
+                    <motion.span
+                      className="grid h-7 w-7 place-items-center rounded-full bg-white text-black shadow-[0_0_16px_rgba(255,255,255,0.35)]"
+                      initial={{ scale: 0 }}
+                      transition={{ delay: 0.5 + i * 0.12, type: "spring", stiffness: 420, damping: 14 }}
+                      viewport={{ once: true, margin: "-80px" }}
+                      whileInView={{ scale: 1 }}
+                    >
                       <Check className="h-4 w-4" />
-                    </span>
+                    </motion.span>
                   ) : (
                     <span className="grid h-7 w-7 place-items-center rounded-full border border-white/15 text-white/40">
                       <X className="h-4 w-4" />
                     </span>
                   )}
                 </span>
-              </div>
+              </motion.div>
             ))}
           </div>
         </Reveal>

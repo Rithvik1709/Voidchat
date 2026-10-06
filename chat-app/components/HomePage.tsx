@@ -3,12 +3,12 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { motion, useScroll, useTransform } from "framer-motion";
+import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion";
 import { ArrowRight, ArrowUpRight, DoorClosed, EyeOff, Flame, Ghost, History, MessagesSquare, PhoneOff, UserX } from "lucide-react";
 import ProtocolMesh from "@/components/landing/ProtocolMesh";
 import Story from "@/components/landing/Story";
 import { Bento, Capabilities, Compare, Faq, Spotlight, UseCases } from "@/components/landing/Sections";
-import { Grain, Heading, Stars } from "@/components/landing/parts";
+import { Grain, Heading, ScrollRise, Stars, VanishText } from "@/components/landing/parts";
 import { hand } from "@/components/landing/fonts";
 import { SITE } from "@/lib/site";
 
@@ -108,6 +108,17 @@ export default function HomePage() {
   const { scrollY } = useScroll();
   const sceneY = useTransform(scrollY, [0, 800], [0, 90]);
   const copyY = useTransform(scrollY, [0, 600], [0, -40]);
+  // hero copy drifts back into the fog while the scene leans toward you
+  const copyOpacity = useTransform(scrollY, [80, 560], [1, 0]);
+  const copyBlur = useTransform(scrollY, [80, 560], ["blur(0px)", "blur(8px)"]);
+  const sceneScale = useTransform(scrollY, [0, 800], [1, 1.12]);
+  const reduce = useReducedMotion();
+  const footerRef = useRef<HTMLElement>(null);
+  const { scrollYProgress: footerP } = useScroll({ target: footerRef, offset: ["start end", "end end"] });
+  const pierY = useTransform(footerP, [0, 1], [90, 0]);
+  const pierScale = useTransform(footerP, [0, 1], [1.14, 1]);
+  const markOpacity = useTransform(footerP, [0.45, 0.95], [0, 1]);
+  const markSpacing = useTransform(footerP, [0.45, 1], ["0.12em", "-0.07em"]);
 
   return (
     <div className={`${hand.variable} relative min-h-screen overflow-x-clip bg-[#070707] selection:bg-black selection:text-white`}>
@@ -165,7 +176,7 @@ export default function HomePage() {
 
       {/* HERO */}
       <section className="relative -mt-[61px] flex min-h-[100svh] flex-col items-center overflow-hidden bg-[#f8f8f8] px-5 pt-40 text-center text-neutral-900 md:pt-48">
-        <motion.div className="relative z-10 flex flex-col items-center" style={{ y: copyY }}>
+        <motion.div className="relative z-10 flex flex-col items-center" style={reduce ? undefined : { y: copyY, opacity: copyOpacity, filter: copyBlur }}>
           <motion.h1
             animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
             className="text-[2.7rem] font-medium leading-[1.0] tracking-[-0.065em] sm:text-6xl md:text-7xl lg:text-[5.6rem]"
@@ -218,7 +229,7 @@ export default function HomePage() {
 
         <motion.div
           className="absolute inset-x-0 bottom-0 h-[46%] min-h-[16rem] sm:h-[64%] sm:min-h-[20rem] [mask-image:linear-gradient(to_bottom,transparent,black_22%)]"
-          style={{ y: sceneY }}
+          style={reduce ? undefined : { y: sceneY, scale: sceneScale, transformOrigin: "50% 100%" }}
         >
           <Image alt="" className="object-cover object-bottom" fill priority sizes="100vw" src="/landing/scene-hero.webp" />
         </motion.div>
@@ -259,9 +270,11 @@ export default function HomePage() {
               strong="Every voice is a node."
               sub="Type a message below and watch it join the mesh. Then refresh the page. It's gone, just like a real room."
             />
-            <div className="mt-12 rounded-[2rem] border border-white/[0.12] bg-gradient-to-b from-white/[0.08] to-white/[0.02] p-2">
-              <ProtocolMesh />
-            </div>
+            <ScrollRise className="mt-12">
+              <div className="rounded-[2rem] border border-white/[0.12] bg-gradient-to-b from-white/[0.08] to-white/[0.02] p-2">
+                <ProtocolMesh />
+              </div>
+            </ScrollRise>
           </div>
         </section>
 
@@ -271,18 +284,21 @@ export default function HomePage() {
         {/* closing line under a quiet starfield; the footer slides up over it */}
         <div className="relative overflow-hidden px-5 pb-20 pt-28 text-center">
           <Stars />
-          <h2 className="relative text-4xl font-medium tracking-[-0.05em] text-white sm:text-5xl">Say it. Then it&apos;s gone.</h2>
+          <VanishText className="relative text-4xl font-medium tracking-[-0.05em] text-white sm:text-5xl" text="Say it. Then it's gone." />
           <p className="relative mt-4 text-white/45">Your first room is three seconds away.</p>
         </div>
       </main>
 
       {/* LIGHT: footer, a pier walking off into the fog */}
-      <footer className="relative -mt-2 overflow-hidden rounded-t-[1.75rem] bg-[#f4f4f4] text-neutral-900">
-        <div className="absolute inset-x-0 bottom-0 h-[52%] [mask-image:linear-gradient(to_bottom,transparent,black_28%)] sm:h-[78%]">
+      <footer className="relative -mt-2 overflow-hidden rounded-t-[1.75rem] bg-[#f4f4f4] text-neutral-900" ref={footerRef}>
+        <motion.div
+          className="absolute inset-x-0 bottom-0 h-[52%] [mask-image:linear-gradient(to_bottom,transparent,black_28%)] sm:h-[78%]"
+          style={reduce ? undefined : { y: pierY, scale: pierScale, transformOrigin: "50% 100%" }}
+        >
           <Image alt="" className="object-cover object-[55%_100%] sm:object-[60%_100%]" fill sizes="100vw" src="/landing/scene-pier.webp" />
           {/* deepen the water so the wordmark and the bottom bar read clearly */}
           <div className="absolute inset-x-0 bottom-0 h-[55%] bg-gradient-to-b from-transparent via-black/20 to-black/55" />
-        </div>
+        </motion.div>
 
         <div className="relative z-10 mx-auto max-w-7xl px-5 pt-12 sm:px-8 md:pt-16">
           <div className="grid gap-12 lg:grid-cols-[1.1fr_1.4fr]">
@@ -342,13 +358,17 @@ export default function HomePage() {
 
           {/* room for the scene to breathe, then the wordmark etched over the water */}
           <div className="h-[7rem] sm:h-[11rem] md:h-[13rem]" />
-          <div
+          <motion.div
             aria-hidden
-            className="select-none bg-clip-text text-center font-mono text-[clamp(4rem,17vw,14rem)] font-extrabold leading-[0.8] tracking-[-0.07em] text-transparent"
-            style={{ backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.92) 1.6px, transparent 2px)", backgroundSize: "6px 6px" }}
+            className="select-none whitespace-nowrap bg-clip-text text-center font-mono text-[clamp(4rem,17vw,14rem)] font-extrabold leading-[0.8] tracking-[-0.07em] text-transparent"
+            style={{
+              backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.92) 1.6px, transparent 2px)",
+              backgroundSize: "6px 6px",
+              ...(reduce ? {} : { opacity: markOpacity, letterSpacing: markSpacing }),
+            }}
           >
             nullchat
-          </div>
+          </motion.div>
 
           <div className="mt-4 flex flex-col items-center justify-between gap-3 border-t border-white/30 py-5 font-mono text-[11px] text-white/85 sm:flex-row">
             <span>© 2026 Nullchat · Anonymous by design.</span>
