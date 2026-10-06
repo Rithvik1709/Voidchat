@@ -336,6 +336,169 @@ def footer(out):
     finish(img, rng, out, (2400, 900))
 
 
+# --------------------------------------------------------------- pier ----
+
+def pier(out):
+    """A jetty walking off into fog over still water, seen from the shore."""
+    rng = np.random.default_rng(23)
+    W, H = int(2400 * SS), int(900 * SS)
+    hy = 0.50 * H  # horizon
+    cx = 0.47 * W  # vanishing point
+    NEAR = 4.5
+    F = (H - hy) * NEAR / 1.6  # deck meets the bottom edge NEAR metres away
+    HC, WATER = 1.6, 2.7  # camera height above deck / above water
+    fogc = 0.93
+
+    def sy(z, height):  # screen y of a point `height` metres above the deck
+        return hy + F * (HC - height) / z
+
+    def sx(z, X):
+        return cx + F * X / z
+
+    def fogged(tone, z, k=26.0):
+        f = 1 - np.exp(-z / k)
+        return tone * (1 - f) + fogc * f
+
+    # sky + distant ranges sitting on the horizon
+    img = sky(rng, H, W, 0.975, 0.935)
+    Y = np.arange(H, dtype=np.float32)[:, None]
+    for base, tone, amp in [(hy - 95 * SS, 0.87, 70), (hy - 40 * SS, 0.80, 45), (hy - 12 * SS, 0.74, 18)]:
+        y = ridge(rng, W, base, [(620 * SS, amp * SS), (160 * SS, amp * 0.35 * SS), (30 * SS, 3 * SS)])
+        y = np.minimum(y, hy - 2)
+        m = below(H, y, 1.5) * (Y < hy)
+        comp(img, m, tone + 0.10 * np.clip((Y - y[None, :]) / (60 * SS), 0, 1))
+        # mirrored range in the water
+        yr = 2 * hy - y
+        mr = (Y >= hy) * np.clip((yr[None, :] - Y) / 1.5 + 0.5, 0, 1)
+        comp(img, mr, tone + 0.06)
+    # water: brighter at the horizon, darker toward the viewer
+    t = np.clip((Y - hy) / (H - hy), 0, 1)
+    water = fogc - 0.36 * t ** 0.9
+    wm = (Y >= hy).astype(np.float32)
+    img = img * (1 - wm) + wm * np.where(wm > 0, np.minimum(img, 1) * 0.35 + water * 0.65, 0)
+    fog_band(img, hy - 60 * SS, hy + 70 * SS, 0.9, fogc=fogc, rng=rng)
+
+    canvas = Image.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8), "L")
+    d = ImageDraw.Draw(canvas)
+    XL, XR = 1.3, 3.9  # pier edges, metres to the right of the camera
+    zs = np.arange(160, NEAR - 0.6, -0.45)
+
+    def v(tone):
+        return int(np.clip(tone, 0, 1) * 255)
+
+    # reflections first, so the ripple pass can break them up
+    for z in np.arange(158, NEAR - 1, -3.0):
+        w = max(1, F * 0.16 / z)
+        x = sx(z, XL)
+        top, bot = hy + F * (WATER) / z, hy + F * (WATER + 1.1 - 0.0) / z
+        d.rectangle([x - w / 2, top, x + w / 2, hy + F * (WATER + 1.0) / z * 1.0], fill=v(fogged(0.40, z) * 0.5 + 0.35))
+    for z in np.arange(150, 15, -12):
+        x = sx(z, XL)
+        w = max(1, F * 0.07 / z)
+        d.rectangle([x - w / 2, hy + F * WATER / z, x + w / 2, hy + F * (WATER + 3.2 + 1.1) / z], fill=v(fogged(0.42, z) * 0.5 + 0.38))
+    arr = np.asarray(canvas, np.float32) / 255
+    # ripples: shift each water row sideways a little, more near the viewer
+    rows = np.arange(H)
+    near = np.clip((rows - hy) / (H - hy), 0, 1)
+    off = (np.sin(rows * 0.9 / SS) * 1.5 + rng.normal(0, 1.0, H)) * SS * (0.5 + 5 * near ** 1.5)
+    off[rows < hy] = 0
+    cols = np.clip(np.arange(W)[None, :] + off[:, None], 0, W - 1).astype(int)
+    arr = arr[rows[:, None], cols]
+    # glinting horizontal ripple strokes
+    lines = Image.new("L", (W, H), 0)
+    ld = ImageDraw.Draw(lines)
+    for _ in range(9000):
+        yy = hy + (H - hy) * rng.random() ** 1.6
+        n = (yy - hy) / (H - hy)
+        L = (4 + 90 * n) * SS * rng.uniform(0.4, 1.0)
+        xx = rng.uniform(0, W)
+        ld.line([(xx, yy), (xx + L, yy)], fill=int(rng.uniform(120, 255)), width=max(1, int(SS * (0.6 + 1.2 * n))))
+    lines = np.asarray(lines, np.float32) / 255
+    arr += 0.10 * lines * (Y >= hy)
+    dark = Image.new("L", (W, H), 0)
+    dd = ImageDraw.Draw(dark)
+    for _ in range(6000):
+        yy = hy + (H - hy) * rng.random() ** 1.3
+        n = (yy - hy) / (H - hy)
+        L = (6 + 120 * n) * SS * rng.uniform(0.4, 1.0)
+        xx = rng.uniform(0, W)
+        dd.line([(xx, yy), (xx + L, yy)], fill=255, width=max(1, int(SS * (0.8 + 1.6 * n))))
+    arr -= 0.07 * (np.asarray(dark, np.float32) / 255) * (Y >= hy)
+
+    canvas = Image.fromarray((np.clip(arr, 0, 1) * 255).astype(np.uint8), "L")
+    d = ImageDraw.Draw(canvas)
+
+    # pier, painted far to near
+    for i in range(len(zs) - 1):
+        z0, z1 = zs[i], zs[i + 1]
+        # deck plank strip
+        quad = [(sx(z0, XL), sy(z0, 0)), (sx(z0, XR), sy(z0, 0)), (sx(z1, XR), sy(z1, 0)), (sx(z1, XL), sy(z1, 0))]
+        d.polygon(quad, fill=v(fogged(0.50 + 0.05 * rng.random(), z1)))
+        # fascia: the deck's side face toward the viewer
+        face = [(sx(z0, XL), sy(z0, 0)), (sx(z1, XL), sy(z1, 0)), (sx(z1, XL), sy(z1, -0.35)), (sx(z0, XL), sy(z0, -0.35))]
+        d.polygon(face, fill=v(fogged(0.24, z1)))
+        if i % 1 == 0:
+            d.line([(sx(z1, XL), sy(z1, 0)), (sx(z1, XR), sy(z1, 0))], fill=v(fogged(0.36, z1)), width=max(1, int(F * 0.012 / z1)))
+    for z in np.arange(158, 1.4, -3.0):
+        # pilings into the water
+        w = max(1, F * 0.16 / z)
+        x = sx(z, XL)
+        d.rectangle([x - w / 2, sy(z, -0.35), x + w / 2, hy + F * WATER / z], fill=v(fogged(0.20, z)))
+        # railing posts on both edges
+        for X in (XL + 0.08, XR - 0.08):
+            xp, wp = sx(z, X), max(1, F * 0.07 / z)
+            d.rectangle([xp - wp / 2, sy(z, 1.0), xp + wp / 2, sy(z, 0)], fill=v(fogged(0.22, z)))
+    for X in (XL + 0.08, XR - 0.08):
+        for hgt, wd in ((1.0, 0.07), (0.55, 0.045)):
+            zr = np.arange(160, 1.2, -0.5)
+            pts = [(sx(z, X), sy(z, hgt)) for z in zr]
+            for (a, b), z in zip(zip(pts, pts[1:]), zr):
+                d.line([a, b], fill=v(fogged(0.20, z)), width=max(1, int(F * wd / z)))
+    # lamp posts on the near edge, with a soft glow
+    glow = np.zeros((H, W), np.float32)
+    for z in np.arange(150, 15, -12):
+        x = sx(z, XL + 0.08)
+        w = max(1, F * 0.07 / z)
+        d.rectangle([x - w / 2, sy(z, 3.2), x + w / 2, sy(z, 0)], fill=v(fogged(0.22, z)))
+        r = max(2, F * 0.13 / z)
+        d.rectangle([x - r, sy(z, 3.45), x + r, sy(z, 3.15)], fill=v(fogged(0.30, z)))
+        d.polygon([(x - r * 1.4, sy(z, 3.45)), (x + r * 1.4, sy(z, 3.45)), (x, sy(z, 3.62))], fill=v(fogged(0.22, z)))
+        gx, gy = int(x), int(sy(z, 3.3))
+        if 0 <= gx < W and 0 <= gy < H:
+            glow[gy, gx] = np.exp(-z / 60)
+    # someone walking away
+    z, X = 22.0, 2.4
+    s = F / z
+    fx, fy = sx(z, X), sy(z, 0)
+    tone = v(fogged(0.16, z, 40))
+    d.polygon([(fx - 0.22 * s, fy - 0.95 * s), (fx + 0.22 * s, fy - 0.95 * s), (fx + 0.18 * s, fy - 1.5 * s), (fx - 0.18 * s, fy - 1.5 * s)], fill=tone)
+    d.ellipse([fx - 0.11 * s, fy - 1.75 * s, fx + 0.11 * s, fy - 1.5 * s], fill=tone)
+    d.polygon([(fx - 0.15 * s, fy - 0.95 * s), (fx - 0.02 * s, fy - 0.95 * s), (fx - 0.06 * s, fy), (fx - 0.16 * s, fy)], fill=tone)
+    d.polygon([(fx + 0.02 * s, fy - 0.95 * s), (fx + 0.15 * s, fy - 0.95 * s), (fx + 0.13 * s, fy - 0.05 * s), (fx + 0.03 * s, fy - 0.05 * s)], fill=tone)
+
+    img = np.asarray(canvas, np.float32) / 255
+    img += np.clip(gaussian_filter(glow, 16 * SS) * 2 * np.pi * (16 * SS) ** 2 * 0.22, 0, 0.3)
+    # plank texture on the near deck
+    deckm = np.zeros((H, W), np.float32)
+    dm = ImageDraw.Draw(m_img := Image.new("L", (W, H), 0))
+    dm.polygon([(sx(40, XL), sy(40, 0)), (sx(40, XR), sy(40, 0)), (sx(NEAR - 0.6, XR), sy(NEAR - 0.6, 0)), (sx(NEAR - 0.6, XL), sy(NEAR - 0.6, 0))], fill=255)
+    deckm = np.asarray(m_img, np.float32) / 255
+    img -= 0.07 * strokes(img.shape, deckm, rng, int(deckm.sum() / (60 * SS * SS)), 9 * SS) * deckm
+    img += 0.05 * strokes(img.shape, deckm, rng, int(deckm.sum() / (90 * SS * SS)), 9 * SS) * deckm
+    # darken the near water and corners a touch
+    Xn = np.linspace(-1, 1, W, dtype=np.float32)[None, :]
+    img -= 0.10 * np.clip((Y - hy) / (H - hy), 0, 1) ** 2 + 0.05 * Xn ** 2 * np.clip((Y - hy) / (H - hy), 0, 1)
+    # a few birds
+    for bx, by, bs in [(0.22, 0.20, 9), (0.25, 0.17, 7), (0.28, 0.215, 6), (0.70, 0.12, 6)]:
+        x0, y0, r = bx * W, by * H, bs * SS
+        d2 = ImageDraw.Draw(bimg := Image.new("L", (W, H), 0))
+        d2.arc([x0 - r, y0, x0, y0 + r], 200, 330, fill=255, width=int(1.5 * SS))
+        d2.arc([x0, y0, x0 + r, y0 + r], 210, 340, fill=255, width=int(1.5 * SS))
+        img -= 0.5 * np.asarray(bimg, np.float32) / 255
+    fog_band(img, hy - 40 * SS, hy + 30 * SS, 0.5, fogc=fogc, rng=rng)
+    finish(img, rng, out, (2400, 900))
+
+
 if __name__ == "__main__":
     which = sys.argv[1]
-    {"hero": hero, "footer": footer}[which](sys.argv[2])
+    {"hero": hero, "footer": footer, "pier": pier}[which](sys.argv[2])

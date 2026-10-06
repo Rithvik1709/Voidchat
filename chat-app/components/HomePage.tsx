@@ -30,6 +30,16 @@ const MARQUEE = [
   [Flame, "Links that burn"],
 ] as const;
 
+const X_URL = "https://x.com/Bngrithvik";
+
+function XLogo({ className = "h-3.5 w-3.5" }: { className?: string }) {
+  return (
+    <svg aria-label="X" className={className} fill="currentColor" role="img" viewBox="0 0 24 24">
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  );
+}
+
 const FOOTER_COLS = [
   {
     title: "Product",
@@ -55,6 +65,10 @@ const FOOTER_COLS = [
       ["Privacy", "/privacy"],
       ["Terms", "/terms"],
     ],
+  },
+  {
+    title: "Social",
+    links: [["X / Twitter", X_URL]],
   },
 ];
 
@@ -140,14 +154,11 @@ export default function HomePage() {
             className={`inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-all active:scale-95 ${
               dark ? "bg-white text-black" : "bg-neutral-950 text-white shadow-[0_8px_20px_-8px_rgba(0,0,0,0.6)]"
             }`}
-            href="https://x.com/Bngrithvik"
+            href={X_URL}
             rel="noopener noreferrer"
             target="_blank"
           >
-            Follow on
-            <svg aria-label="X" className="h-3.5 w-3.5" fill="currentColor" role="img" viewBox="0 0 24 24">
-              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-            </svg>
+            Follow on <XLogo />
           </a>
         </div>
       </nav>
@@ -265,48 +276,100 @@ export default function HomePage() {
         </div>
       </main>
 
-      {/* LIGHT: footer */}
-      <footer className="relative -mt-2 overflow-hidden rounded-t-[1.75rem] bg-[#f6f6f6] text-neutral-900">
-        <div className="absolute inset-x-0 bottom-0 h-[78%] [mask-image:linear-gradient(to_bottom,transparent,black_30%)]">
-          <Image alt="" className="object-cover object-bottom" fill sizes="100vw" src="/landing/scene-footer-2.webp" />
+      {/* LIGHT: footer, a pier walking off into the fog */}
+      <footer className="relative -mt-2 overflow-hidden rounded-t-[1.75rem] bg-[#f4f4f4] text-neutral-900">
+        <div className="absolute inset-x-0 bottom-0 h-[52%] [mask-image:linear-gradient(to_bottom,transparent,black_28%)] sm:h-[78%]">
+          <Image alt="" className="object-cover object-[55%_100%] sm:object-[60%_100%]" fill sizes="100vw" src="/landing/scene-pier.webp" />
+          {/* deepen the water so the wordmark and the bottom bar read clearly */}
+          <div className="absolute inset-x-0 bottom-0 h-[55%] bg-gradient-to-b from-transparent via-black/20 to-black/55" />
         </div>
-        <div className="relative z-10 mx-auto grid max-w-7xl gap-12 px-5 pb-[22rem] pt-16 sm:px-8 md:grid-cols-[1.3fr_2fr] md:pb-[28rem] md:pt-20">
-          <div>
-            <div
-              className="bg-clip-text font-mono text-[clamp(3.4rem,10vw,7.5rem)] font-extrabold leading-none tracking-[-0.06em] text-transparent"
-              style={{ backgroundImage: "radial-gradient(circle, #141414 1.5px, transparent 1.9px)", backgroundSize: "5px 5px" }}
-            >
-              nullchat
-            </div>
-            <p className="mt-5 text-[15px] text-neutral-700">{SITE.tagline}</p>
-            <Link
-              className="mt-8 inline-flex items-center gap-2 rounded-full bg-neutral-950 px-6 py-3 text-sm font-semibold text-white transition-transform active:scale-95"
-              href="/groups"
-            >
-              Open Nullchat <ArrowUpRight className="h-4 w-4" />
-            </Link>
-          </div>
-          <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
-            {FOOTER_COLS.map((c) => (
-              <div key={c.title}>
-                <div className="mb-5 font-mono text-[11px] text-neutral-500">{c.title}</div>
-                <ul className="space-y-3.5 text-[15px]">
-                  {c.links.map(([l, h]) => (
-                    <li key={l}>
-                      <SmartLink className="text-neutral-800 transition-colors hover:text-black" href={h}>
-                        {l}
-                        {h.startsWith("mailto:") && <ArrowUpRight className="ml-1 inline h-3 w-3 text-neutral-500" />}
-                      </SmartLink>
-                    </li>
-                  ))}
-                </ul>
+
+        <div className="relative z-10 mx-auto max-w-7xl px-5 pt-12 sm:px-8 md:pt-16">
+          <div className="grid gap-12 lg:grid-cols-[1.1fr_1.4fr]">
+            <div>
+              <h2 className="text-[2.4rem] font-medium leading-[1.0] tracking-[-0.055em] md:text-[3.4rem]">
+                <span className="text-neutral-400">Say what you need to.</span>
+                <br />
+                Leave nothing behind.
+              </h2>
+              <p className="mt-5 max-w-sm text-[15px] text-neutral-600">{SITE.tagline}</p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link
+                  className="inline-flex items-center gap-2 rounded-full bg-neutral-950 px-6 py-3 text-sm font-semibold text-white shadow-[0_10px_24px_-10px_rgba(0,0,0,0.6)] transition-transform active:scale-95"
+                  href="/groups"
+                >
+                  Open Nullchat <ArrowUpRight className="h-4 w-4" />
+                </Link>
+                <a
+                  className="inline-flex items-center gap-2 rounded-full border border-neutral-900/80 bg-white/60 px-6 py-3 text-sm font-semibold backdrop-blur transition-colors hover:bg-white"
+                  href={X_URL}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  Follow on <XLogo />
+                </a>
               </div>
-            ))}
+            </div>
+
+            <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
+              {FOOTER_COLS.map((c) => (
+                <div key={c.title}>
+                  <div className="mb-5 font-mono text-[11px] uppercase tracking-[0.18em] text-neutral-500">{c.title}</div>
+                  <ul className="space-y-3 text-[15px]">
+                    {c.links.map(([l, h]) => {
+                      const external = !h.startsWith("/") && !h.startsWith("#");
+                      return (
+                        <li key={l}>
+                          {h.startsWith("http") ? (
+                            <a className="group inline-flex items-center text-neutral-800 transition-colors hover:text-black" href={h} rel="noopener noreferrer" target="_blank">
+                              {l}
+                              <ArrowUpRight className="ml-1 h-3 w-3 text-neutral-400 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+                            </a>
+                          ) : (
+                            <SmartLink className="group inline-flex items-center text-neutral-800 transition-colors hover:text-black" href={h}>
+                              {l}
+                              {external && <ArrowUpRight className="ml-1 h-3 w-3 text-neutral-400" />}
+                            </SmartLink>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* room for the scene to breathe, then the wordmark etched over the water */}
+          <div className="h-[7rem] sm:h-[11rem] md:h-[13rem]" />
+          <div
+            aria-hidden
+            className="select-none bg-clip-text text-center font-mono text-[clamp(4rem,17vw,14rem)] font-extrabold leading-[0.8] tracking-[-0.07em] text-transparent"
+            style={{ backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.92) 1.6px, transparent 2px)", backgroundSize: "6px 6px" }}
+          >
+            nullchat
+          </div>
+
+          <div className="mt-4 flex flex-col items-center justify-between gap-3 border-t border-white/30 py-5 font-mono text-[11px] text-white/85 sm:flex-row">
+            <span>© 2026 Nullchat · Anonymous by design.</span>
+            <div className="flex items-center gap-5">
+              <Link className="flex items-center gap-2 transition-colors hover:text-white" href="/status">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+                System status
+              </Link>
+              <a
+                className="transition-colors hover:text-white"
+                href="#top"
+                onClick={(e) => {
+                  e.preventDefault();
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+              >
+                Back to top ↑
+              </a>
+            </div>
           </div>
         </div>
-        <p className="absolute bottom-6 left-0 right-0 z-10 mx-auto max-w-7xl px-5 font-mono text-[11px] text-neutral-600 sm:px-8">
-          © 2026 Nullchat · Anonymous by design.
-        </p>
       </footer>
     </div>
   );
