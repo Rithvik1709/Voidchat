@@ -1,16 +1,19 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion";
-import { ArrowRight, ArrowUpRight, DoorClosed, EyeOff, Flame, Ghost, History, MessagesSquare, PhoneOff, UserX } from "lucide-react";
+import { motion, useReducedMotion, useScroll, useSpring, useTransform, type MotionValue } from "framer-motion";
+import { ArrowDown, ArrowUpRight } from "lucide-react";
+import BurnNote from "@/components/landing/BurnNote";
+import BurnScroll from "@/components/landing/BurnScroll";
 import ProtocolMesh from "@/components/landing/ProtocolMesh";
-import Story from "@/components/landing/Story";
-import { Bento, Capabilities, Compare, Faq, Spotlight, UseCases } from "@/components/landing/Sections";
-import { Grain, Heading, ScrollRise, Stars, VanishText } from "@/components/landing/parts";
-import { hand } from "@/components/landing/fonts";
+import Steps from "@/components/landing/Steps";
+import { Closing, Faq, Features, Ledger, UseCases } from "@/components/landing/Sections";
+import { BurntEdge, EmberCursor, Embers, FillStatement, Kicker, Magnetic, MatchIntro, PaperGrain, RiseWords, SmoothScroll, VelocityMarquee, ease } from "@/components/landing/ui";
+import { serif } from "@/components/landing/fonts";
 import { SITE } from "@/lib/site";
+
+const X_URL = "https://x.com/Bngrithvik";
 
 const NAV = [
   ["How it works", "how"],
@@ -20,17 +23,14 @@ const NAV = [
   ["FAQ", "faq"],
 ];
 
-const MARQUEE = [
-  [UserX, "No accounts"],
-  [PhoneOff, "No phone numbers"],
-  [History, "No message history"],
-  [EyeOff, "No tracking"],
-  [Ghost, "No trace"],
-  [DoorClosed, "Rooms that vanish"],
-  [Flame, "Links that burn"],
-] as const;
+const FOOTER_COLS = [
+  { title: "Product", links: [["Launch app", "/groups"], ["How it works", "#how"], ["Features", "#features"], ["FAQ", "#faq"]] },
+  { title: "Company", links: [["About", "/about"], ["Status", "/status"], ["Support", "mailto:support@nullchat.tech"], ["Feedback", "mailto:feedback@nullchat.tech"]] },
+  { title: "Legal", links: [["Privacy", "/privacy"], ["Terms", "/terms"]] },
+  { title: "Social", links: [["X / Twitter", X_URL]] },
+];
 
-const X_URL = "https://x.com/Bngrithvik";
+const TICKER = ["no accounts", "no history", "no phone numbers", "no tracking", "no trace"];
 
 function XLogo({ className = "h-3.5 w-3.5" }: { className?: string }) {
   return (
@@ -40,351 +40,340 @@ function XLogo({ className = "h-3.5 w-3.5" }: { className?: string }) {
   );
 }
 
-const FOOTER_COLS = [
-  {
-    title: "Product",
-    links: [
-      ["Launch app", "/groups"],
-      ["How it works", "#how"],
-      ["Features", "#features"],
-      ["FAQ", "#faq"],
-    ],
-  },
-  {
-    title: "Company",
-    links: [
-      ["About", "/about"],
-      ["Status", "/status"],
-      ["Support", "mailto:support@nullchat.tech"],
-      ["Feedback", "mailto:feedback@nullchat.tech"],
-    ],
-  },
-  {
-    title: "Legal",
-    links: [
-      ["Privacy", "/privacy"],
-      ["Terms", "/terms"],
-    ],
-  },
-  {
-    title: "Social",
-    links: [["X / Twitter", X_URL]],
-  },
-];
+function SmartLink({ href, className, children }: { href: string; className: string; children: React.ReactNode }) {
+  if (href.startsWith("/")) return <Link className={className} href={href}>{children}</Link>;
+  const external = href.startsWith("http");
+  return (
+    <a className={className} href={href} rel={external ? "noopener noreferrer" : undefined} target={external ? "_blank" : undefined}>
+      {children}
+    </a>
+  );
+}
 
-/** Nav turns dark over the dark sections and highlights the section in view. */
-function useNavState(darkRef: React.RefObject<HTMLElement | null>) {
+/** The pill turns to ink over dark sections and marks the section you're in. */
+function useNavState() {
   const [dark, setDark] = useState(false);
   const [active, setActive] = useState<string | null>(null);
   useEffect(() => {
     const onScroll = () => {
-      const r = darkRef.current?.getBoundingClientRect();
-      setDark(!!r && r.top < 72 && r.bottom > 72);
+      const probe = 40;
+      setDark([...document.querySelectorAll<HTMLElement>("[data-nav='dark']")].some((el) => {
+        const r = el.getBoundingClientRect();
+        return r.top <= probe && r.bottom >= probe;
+      }));
       let current: string | null = null;
       for (const [, id] of NAV) {
         const el = document.getElementById(id);
-        if (el && el.getBoundingClientRect().top < window.innerHeight * 0.4) current = id;
+        if (el && el.getBoundingClientRect().top < window.innerHeight * 0.45) current = id;
       }
       setActive(current);
     };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
-  }, [darkRef]);
+  }, []);
   return { dark, active };
 }
 
-function SmartLink({ href, className, children }: { href: string; className: string; children: React.ReactNode }) {
-  return href.startsWith("/") ? (
-    <Link className={className} href={href}>{children}</Link>
-  ) : (
-    <a className={className} href={href}>{children}</a>
+/** One letter of the footer wordmark: rises into place, then fills with fire from below. */
+function FireLetter({ char, i, p, fire, reduce }: { char: string; i: number; p: MotionValue<number>; fire: MotionValue<string>; reduce: boolean }) {
+  const y = useTransform(p, [0.15 + i * 0.05, 0.55 + i * 0.05], ["100%", "0%"]);
+  return (
+    <motion.span
+      aria-hidden
+      className="inline-block bg-clip-text pr-[0.02em] text-transparent"
+      style={{
+        backgroundImage: "linear-gradient(to top, #ff5b1f 0%, #ff8a4c 14%, #ffd2b0 26%, rgba(241,236,227,0.12) 42%, rgba(241,236,227,0.12) 100%)",
+        backgroundSize: "100% 300%",
+        ...(reduce ? { backgroundPosition: "0% 100%" } : { backgroundPosition: fire, y }),
+      }}
+    >
+      {char}
+    </motion.span>
   );
 }
 
 export default function HomePage() {
-  const mainRef = useRef<HTMLElement>(null);
-  const { dark, active } = useNavState(mainRef);
-  const { scrollY } = useScroll();
-  const sceneY = useTransform(scrollY, [0, 800], [0, 90]);
-  const copyY = useTransform(scrollY, [0, 600], [0, -40]);
-  // hero copy drifts back into the fog while the scene leans toward you
-  const copyOpacity = useTransform(scrollY, [80, 560], [1, 0]);
-  const copyBlur = useTransform(scrollY, [80, 560], ["blur(0px)", "blur(8px)"]);
-  const sceneScale = useTransform(scrollY, [0, 800], [1, 1.12]);
   const reduce = useReducedMotion();
-  const footerRef = useRef<HTMLElement>(null);
-  const { scrollYProgress: footerP } = useScroll({ target: footerRef, offset: ["start end", "end end"] });
-  const pierY = useTransform(footerP, [0, 1], [90, 0]);
-  const pierScale = useTransform(footerP, [0, 1], [1.14, 1]);
-  const markOpacity = useTransform(footerP, [0.45, 0.95], [0, 1]);
-  const markSpacing = useTransform(footerP, [0.45, 1], ["0.12em", "-0.07em"]);
+  const { dark, active } = useNavState();
+  const { scrollY, scrollYProgress } = useScroll();
+  const progress = useSpring(scrollYProgress, { stiffness: 140, damping: 28 });
+
+  // hero: the two lines drift apart as you scroll away
+  const lineA = useTransform(scrollY, [0, 700], [0, -160]);
+  const lineB = useTransform(scrollY, [0, 700], [0, 160]);
+  const noteY = useTransform(scrollY, [0, 700], [0, -90]);
+  const noteRotate = useTransform(scrollY, [0, 700], [0, -6]);
+
+  // footer: the wordmark catches fire from below as it arrives
+  const footRef = useRef<HTMLElement>(null);
+  const { scrollYProgress: footP } = useScroll({ target: footRef, offset: ["start end", "end end"] });
+  const fire = useTransform(footP, [0.2, 1], ["0% 0%", "0% 100%"]);
 
   return (
-    <div className={`${hand.variable} relative min-h-screen overflow-x-clip bg-[#070707] selection:bg-black selection:text-white`}>
-      <Grain />
+    <div className={`${serif.variable} relative min-h-screen overflow-x-clip bg-[#f1ece3] text-[#171412] selection:bg-[#ff5b1f] selection:text-[#171412]`}>
+      <span className="absolute top-0" id="top" />
+      <SmoothScroll />
+      <MatchIntro />
+      <PaperGrain />
+      <EmberCursor />
 
-      {/* nav */}
-      <nav
-        className={`sticky top-0 z-50 border-b backdrop-blur-xl transition-colors duration-500 ${
-          dark ? "border-white/[0.06] bg-[#070707]/70 text-white" : "border-black/[0.05] bg-[#f7f7f7]/75 text-neutral-900"
-        }`}
-      >
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-3 sm:px-8">
-          <Link className="text-[1.65rem] font-medium tracking-[-0.06em]" href="/">
-            nullchat
+      {/* floating pill nav */}
+      <nav className="fixed inset-x-0 top-4 z-50 flex justify-center px-4">
+        <div
+          className={`relative flex w-full max-w-4xl items-center justify-between gap-4 overflow-hidden rounded-full border py-2 pl-5 pr-2 backdrop-blur-xl transition-colors duration-500 ${
+            dark ? "border-[#f1ece3]/10 bg-[#171412]/75 text-[#f1ece3]" : "border-[#171412]/10 bg-[#f1ece3]/75 text-[#171412]"
+          }`}
+        >
+          <Link className="flex items-center gap-2" href="/">
+            <span className="h-2 w-2 rounded-full bg-[#ff5b1f] shadow-[0_0_10px_2px_rgba(255,91,31,0.6)]" />
+            <span className="font-[family-name:var(--font-serif)] text-2xl italic leading-none">nullchat</span>
           </Link>
           <div className="hidden items-center gap-1 md:flex">
-            {NAV.map(([label, id]) => {
-              const on = active === id;
-              return (
-                <a
-                  className={`flex items-center gap-2 rounded-full px-3.5 py-1.5 text-sm transition-all ${
-                    on
-                      ? dark
-                        ? "bg-white/10 font-medium text-white"
-                        : "bg-black/[0.06] font-medium text-black"
-                      : dark
-                        ? "text-white/55 hover:text-white"
-                        : "text-neutral-600 hover:text-black"
-                  }`}
-                  href={`#${id}`}
-                  key={id}
-                >
-                  {on && <span className="h-1.5 w-1.5 rounded-full bg-[#1479c9]" />}
-                  {label}
-                </a>
-              );
-            })}
-            <span className={`mx-3 h-5 w-px ${dark ? "bg-white/15" : "bg-black/10"}`} />
-            <Link className={`rounded-full px-3.5 py-1.5 text-sm ${dark ? "text-white/55 hover:text-white" : "text-neutral-600 hover:text-black"}`} href="/about">
+            {NAV.map(([label, id]) => (
+              <a
+                className={`relative rounded-full px-3 py-1.5 text-[13px] transition-colors ${active === id ? "" : "opacity-60 hover:opacity-100"}`}
+                href={`#${id}`}
+                key={id}
+              >
+                {active === id && (
+                  <motion.span
+                    className={`absolute inset-0 rounded-full ${dark ? "bg-[#f1ece3]/10" : "bg-[#171412]/[0.07]"}`}
+                    layoutId="nav-active"
+                    transition={{ type: "spring", stiffness: 400, damping: 34 }}
+                  />
+                )}
+                <span className="relative">{label}</span>
+              </a>
+            ))}
+            <Link className="rounded-full px-3 py-1.5 text-[13px] opacity-60 transition-opacity hover:opacity-100" href="/about">
               About
             </Link>
           </div>
           <a
-            className={`inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-all active:scale-95 ${
-              dark ? "bg-white text-black" : "bg-neutral-950 text-white shadow-[0_8px_20px_-8px_rgba(0,0,0,0.6)]"
-            }`}
+            className="flex items-center gap-2 rounded-full bg-[#ff5b1f] px-4 py-2 text-[13px] font-medium text-[#171412] transition-transform hover:-translate-y-px"
             href={X_URL}
             rel="noopener noreferrer"
             target="_blank"
           >
             Follow on <XLogo />
           </a>
+          <motion.span aria-hidden className="absolute inset-x-6 bottom-0 h-px origin-left bg-[#ff5b1f]" style={{ scaleX: progress }} />
         </div>
       </nav>
 
-      {/* HERO */}
-      <section className="relative -mt-[61px] flex min-h-[100svh] flex-col items-center overflow-hidden bg-[#f8f8f8] px-5 pt-40 text-center text-neutral-900 md:pt-48">
-        <motion.div className="relative z-10 flex flex-col items-center" style={reduce ? undefined : { y: copyY, opacity: copyOpacity, filter: copyBlur }}>
-          <motion.h1
-            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-            className="text-[2.7rem] font-medium leading-[1.0] tracking-[-0.065em] sm:text-6xl md:text-7xl lg:text-[5.6rem]"
-            initial={{ opacity: 0, y: 24, filter: "blur(8px)" }}
-            transition={{ duration: 0.9, ease: [0.21, 0.6, 0.35, 1] }}
-          >
-            <span className="bg-gradient-to-b from-neutral-500 to-neutral-600 bg-clip-text text-transparent">Talk freely.</span>
-            <br />
-            <span className="font-semibold text-neutral-950">Leave nothing behind</span>
-          </motion.h1>
+      <main>
+        {/* HERO */}
+        <section className="relative flex min-h-[100svh] items-center overflow-hidden pb-24 pt-32">
+          <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(45% 45% at 85% 70%, rgba(255,91,31,0.16), transparent 70%)" }} />
+          <Embers className="bottom-0 right-0 h-[80%] w-full lg:w-1/2" count={18} height={520} />
+          <div className="relative mx-auto grid w-full max-w-7xl items-center gap-16 px-5 sm:px-8 lg:grid-cols-[1.2fr_1fr]">
+            <div className="min-w-0">
+              <Kicker n="01">Anonymous group chat</Kicker>
+              <h1 className="mt-8 font-[family-name:var(--font-serif)] text-[clamp(3.6rem,9.5vw,9rem)] leading-[0.86] tracking-[-0.03em]">
+                <motion.span className="block" style={reduce ? undefined : { x: lineA }}>
+                  <RiseWords text="Say it once." />
+                </motion.span>
+                <motion.span className="block" style={reduce ? undefined : { x: lineB }}>
+                  <RiseWords delay={0.2} text="Then let it" />{" "}
+                  <span className="inline-block overflow-hidden pb-[0.14em] align-bottom">
+                    <motion.span
+                      animate={{ y: "0%" }}
+                      className="inline-block italic text-[#ff5b1f]"
+                      initial={{ y: "105%" }}
+                      transition={{ duration: 0.9, delay: 0.45, ease }}
+                    >
+                      <motion.span
+                        animate={reduce ? undefined : { textShadow: ["0 0 0px rgba(255,91,31,0)", "0 0 28px rgba(255,91,31,0.55)", "0 0 8px rgba(255,91,31,0.2)", "0 0 22px rgba(255,91,31,0.5)", "0 0 0px rgba(255,91,31,0)"] }}
+                        className="inline-block"
+                        transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
+                      >
+                        burn.
+                      </motion.span>
+                    </motion.span>
+                  </span>
+                </motion.span>
+              </h1>
+              <motion.p
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-8 max-w-lg text-lg leading-relaxed text-[#171412]/65"
+                initial={{ opacity: 0, y: 14 }}
+                transition={{ delay: 0.7, duration: 0.8, ease }}
+              >
+                Nullchat is group chat with no accounts and no history. Open a room, share a link, and when it&apos;s over it&apos;s gone for everyone.
+              </motion.p>
+              <motion.div
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-10 flex flex-wrap items-center gap-6"
+                initial={{ opacity: 0, y: 14 }}
+                transition={{ delay: 0.85, duration: 0.8, ease }}
+              >
+                <Magnetic>
+                  <Link
+                    className="group inline-flex items-center gap-3 rounded-full bg-[#171412] py-2.5 pl-6 pr-2.5 text-[15px] font-medium text-[#f1ece3] shadow-[0_14px_30px_-14px_rgba(23,20,18,0.8)]"
+                    href="/groups"
+                  >
+                    Start a room
+                    <span className="grid h-9 w-9 place-items-center rounded-full bg-[#ff5b1f] text-[#171412] transition-transform duration-500 group-hover:rotate-45">
+                      <ArrowUpRight className="h-4 w-4" />
+                    </span>
+                  </Link>
+                </Magnetic>
+                <a className="group relative inline-flex items-center gap-2 text-[15px] font-medium" href="#how">
+                  See how it works
+                  <ArrowDown className="h-4 w-4 transition-transform group-hover:translate-y-0.5" />
+                  <span className="absolute -bottom-1 left-0 h-px w-full origin-right scale-x-100 bg-[#171412] transition-transform duration-500 group-hover:origin-left group-hover:scale-x-0" />
+                </a>
+              </motion.div>
+              <motion.div
+                animate={{ opacity: 1 }}
+                className="mt-12 flex flex-wrap gap-x-6 gap-y-2 font-mono text-[11px] uppercase tracking-[0.18em] text-[#171412]/45"
+                initial={{ opacity: 0 }}
+                transition={{ delay: 1.1, duration: 0.8 }}
+              >
+                <span>no signup</span>
+                <span>·</span>
+                <span>no phone number</span>
+                <span>·</span>
+                <span>free</span>
+              </motion.div>
+            </div>
 
-          <motion.p
-            animate={{ opacity: 1, y: 0 }}
-            className="mt-6 max-w-xl text-base text-neutral-600 md:text-lg"
-            initial={{ opacity: 0, y: 16 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
-          >
-            Group chat with no accounts and no history. Open a room, share a link, and when it ends it&apos;s gone for everyone.
-          </motion.p>
-
-          <motion.div
-            animate={{ opacity: 1, y: 0 }}
-            className="mt-9 flex flex-wrap items-center justify-center gap-3"
-            initial={{ opacity: 0, y: 16 }}
-            transition={{ duration: 0.8, delay: 0.35 }}
-          >
-            <Link
-              className="group flex items-center gap-3 rounded-[14px] bg-gradient-to-b from-neutral-700 via-neutral-900 to-black py-3 pl-4 pr-2.5 font-mono text-[13px] text-white shadow-[0_0_0_2px_#f8f8f8,0_0_0_3.5px_#62b0ff,0_0_24px_2px_rgba(98,176,255,0.45),0_16px_30px_-12px_rgba(0,0,0,0.8)] transition-transform hover:scale-[1.02] active:scale-95"
-              href="/groups"
+            <motion.div
+              animate={{ opacity: 1, y: 0, rotate: 0 }}
+              className="min-w-0"
+              initial={{ opacity: 0, y: 40, rotate: 4 }}
+              transition={{ delay: 0.4, duration: 1.1, ease }}
             >
-              <span className="flex -space-x-1">
-                <MessagesSquare className="h-4 w-4" />
-              </span>
-              Start a room
-              <span className="ml-10 grid h-7 w-7 place-items-center rounded-lg border border-white/15 bg-white/10 transition-transform group-hover:translate-x-0.5">
-                <ArrowRight className="h-3.5 w-3.5" />
-              </span>
-            </Link>
-            <a
-              className="group flex items-center gap-3 rounded-[14px] border border-neutral-900 bg-white/80 py-2.5 pl-5 pr-2.5 text-sm font-medium backdrop-blur transition-colors hover:bg-white"
-              href="#how"
-            >
-              See how it works
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-neutral-200/80 transition-transform group-hover:translate-y-0.5">
-                <ArrowRight className="h-3.5 w-3.5 rotate-90" />
-              </span>
-            </a>
-          </motion.div>
-        </motion.div>
+              <motion.div style={reduce ? undefined : { y: noteY, rotate: noteRotate }}>
+                <BurnNote />
+              </motion.div>
+            </motion.div>
+          </div>
 
-        <motion.div
-          className="absolute inset-x-0 bottom-0 h-[46%] min-h-[16rem] sm:h-[64%] sm:min-h-[20rem] [mask-image:linear-gradient(to_bottom,transparent,black_22%)]"
-          style={reduce ? undefined : { y: sceneY, scale: sceneScale, transformOrigin: "50% 100%" }}
-        >
-          <Image alt="" className="object-cover object-bottom" fill priority sizes="100vw" src="/landing/scene-hero.webp" />
-        </motion.div>
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-b from-transparent via-[#f8f8f8]/70 to-[#f8f8f8]" />
-      </section>
-
-      {/* marquee strip */}
-      <div className="relative z-10 bg-[#f8f8f8] pb-16 pt-14 text-neutral-900">
-        <p className="mb-10 text-center font-mono text-xs tracking-[0.12em] text-neutral-500">Built so there&apos;s nothing to find</p>
-        <div className="overflow-hidden [mask-image:linear-gradient(90deg,transparent,black_14%,black_86%,transparent)]">
-          <motion.div
-            animate={{ x: ["0%", "-50%"] }}
-            className="flex w-max gap-16 whitespace-nowrap"
-            transition={{ duration: 40, ease: "linear", repeat: Infinity }}
-          >
-            {[...MARQUEE, ...MARQUEE, ...MARQUEE, ...MARQUEE].map(([Icon, t], i) => (
-              <span className="flex items-center gap-2.5 text-[1.35rem] font-semibold tracking-[-0.04em] text-neutral-500" key={i}>
-                <Icon className="h-6 w-6" strokeWidth={2.2} />
-                {t}
-              </span>
-            ))}
-          </motion.div>
-        </div>
-      </div>
-
-      {/* DARK: product story */}
-      <main className="dark relative bg-[#080808] text-white" ref={mainRef}>
-        <Story />
-        <Spotlight />
-        <Bento />
-        <Capabilities />
-        <UseCases />
-
-        <section className="scroll-mt-20 border-t border-white/[0.06] py-24 md:py-36" id="mesh">
-          <div className="mx-auto max-w-6xl px-5 sm:px-8">
-            <Heading
-              soft="None are recorded."
-              strong="Every voice is a node."
-              sub="Type a message below and watch it join the mesh. Then refresh the page. It's gone, just like a real room."
-            />
-            <ScrollRise className="mt-12">
-              <div className="rounded-[2rem] border border-white/[0.12] bg-gradient-to-b from-white/[0.08] to-white/[0.02] p-2">
-                <ProtocolMesh />
-              </div>
-            </ScrollRise>
+          <div className="absolute bottom-8 left-1/2 hidden -translate-x-1/2 flex-col items-center gap-2 font-mono text-[10px] uppercase tracking-[0.25em] text-[#171412]/45 md:flex">
+            scroll
+            <span className="relative h-10 w-px overflow-hidden bg-[#171412]/15">
+              <motion.span
+                animate={reduce ? undefined : { y: ["-100%", "100%"] }}
+                className="absolute inset-0 bg-[#ff5b1f]"
+                transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
+              />
+            </span>
           </div>
         </section>
 
-        <Compare />
-        <Faq />
-
-        {/* closing line under a quiet starfield; the footer slides up over it */}
-        <div className="relative overflow-hidden px-5 pb-20 pt-28 text-center">
-          <Stars />
-          <VanishText className="relative text-4xl font-medium tracking-[-0.05em] text-white sm:text-5xl" text="Say it. Then it's gone." />
-          <p className="relative mt-4 text-white/45">Your first room is three seconds away.</p>
+        {/* ticker that answers to your scroll speed */}
+        <div className="border-y border-[#171412]/15 py-6">
+          <VelocityMarquee>
+            {TICKER.map((t, i) => (
+              <span className="flex items-center" key={t}>
+                <span
+                  className={`px-8 font-[family-name:var(--font-serif)] text-[clamp(3rem,7vw,6.5rem)] leading-none ${
+                    i % 2 ? "italic text-transparent [-webkit-text-stroke:1.2px_#171412]" : "text-[#171412]"
+                  }`}
+                >
+                  {t}
+                </span>
+                <span className="text-[clamp(1.5rem,3vw,2.5rem)] text-[#ff5b1f]">✺</span>
+              </span>
+            ))}
+          </VelocityMarquee>
         </div>
+
+        <Steps />
+        <BurnScroll />
+
+        {/* manifesto: words fill from outline to ink as you read */}
+        <section className="py-28 md:py-44">
+          <div className="mx-auto max-w-6xl px-5 sm:px-8">
+            <Kicker>Why we built it</Kicker>
+            <FillStatement
+              className="mt-10 font-[family-name:var(--font-serif)] text-[clamp(2.4rem,6.2vw,5.8rem)] leading-[1.02] tracking-[-0.02em]"
+              text="We built a chat app that *forgets.* No accounts, no phone numbers, no history. Just a room, a link, and a *fire* you control."
+            />
+          </div>
+        </section>
+
+        <Features />
+        <UseCases />
+
+        {/* the interactive mesh */}
+        <section className="py-28 md:py-40" id="mesh">
+          <div className="mx-auto max-w-7xl px-5 sm:px-8">
+            <div className="grid gap-8 md:grid-cols-2 md:items-end">
+              <div>
+                <Kicker n="06">Try it</Kicker>
+                <h2 className="mt-6 font-[family-name:var(--font-serif)] text-6xl leading-[0.9] tracking-[-0.02em] md:text-8xl">
+                  <RiseWords text="Every voice is a node." />
+                  <br />
+                  <RiseWords className="italic text-[#ff5b1f]" delay={0.2} text="None are recorded." />
+                </h2>
+              </div>
+              <p className="max-w-sm text-lg leading-relaxed text-[#171412]/65 md:justify-self-end">
+                Type a message and watch it join the mesh. Then refresh the page. It&apos;s gone, just like a real room.
+              </p>
+            </div>
+            <motion.div
+              className="mt-14 rounded-[28px] bg-[#171412] p-2 shadow-[0_40px_80px_-40px_rgba(23,20,18,0.7)]"
+              initial={{ opacity: 0, y: 80, scale: 0.94 }}
+              transition={{ duration: 1, ease }}
+              viewport={{ once: true, margin: "-10% 0px" }}
+              whileInView={{ opacity: 1, y: 0, scale: 1 }}
+            >
+              <ProtocolMesh />
+            </motion.div>
+          </div>
+        </section>
+
+        <Ledger />
+        <Faq />
+        <Closing />
       </main>
 
-      {/* LIGHT: footer, a pier walking off into the fog */}
-      <footer className="relative -mt-2 overflow-hidden rounded-t-[1.75rem] bg-[#f4f4f4] text-neutral-900" ref={footerRef}>
-        <motion.div
-          className="absolute inset-x-0 bottom-0 h-[52%] [mask-image:linear-gradient(to_bottom,transparent,black_28%)] sm:h-[78%]"
-          style={reduce ? undefined : { y: pierY, scale: pierScale, transformOrigin: "50% 100%" }}
-        >
-          <Image alt="" className="object-cover object-[55%_100%] sm:object-[60%_100%]" fill sizes="100vw" src="/landing/scene-pier.webp" />
-          {/* deepen the water so the wordmark and the bottom bar read clearly */}
-          <div className="absolute inset-x-0 bottom-0 h-[55%] bg-gradient-to-b from-transparent via-black/20 to-black/55" />
-        </motion.div>
-
-        <div className="relative z-10 mx-auto max-w-7xl px-5 pt-12 sm:px-8 md:pt-16">
-          <div className="grid gap-12 lg:grid-cols-[1.1fr_1.4fr]">
+      {/* FOOTER: the name catches fire as you arrive */}
+      <BurntEdge className="-mb-px" />
+      <footer className="relative overflow-hidden bg-[#171412] text-[#f1ece3]" data-nav="dark" ref={footRef}>
+        <Embers className="inset-x-0 bottom-0 h-[70%]" />
+        <div className="relative mx-auto max-w-7xl px-5 pb-8 pt-20 sm:px-8 md:pt-28">
+          <div className="grid gap-12 md:grid-cols-[1fr_1.4fr]">
             <div>
-              <h2 className="text-[2.4rem] font-medium leading-[1.0] tracking-[-0.055em] md:text-[3.4rem]">
-                <span className="text-neutral-400">Say what you need to.</span>
-                <br />
-                Leave nothing behind.
-              </h2>
-              <p className="mt-5 max-w-sm text-[15px] text-neutral-600">{SITE.tagline}</p>
-              <div className="mt-8 flex flex-wrap gap-3">
-                <Link
-                  className="inline-flex items-center gap-2 rounded-full bg-neutral-950 px-6 py-3 text-sm font-semibold text-white shadow-[0_10px_24px_-10px_rgba(0,0,0,0.6)] transition-transform active:scale-95"
-                  href="/groups"
-                >
-                  Open Nullchat <ArrowUpRight className="h-4 w-4" />
-                </Link>
-                <a
-                  className="inline-flex items-center gap-2 rounded-full border border-neutral-900/80 bg-white/60 px-6 py-3 text-sm font-semibold backdrop-blur transition-colors hover:bg-white"
-                  href={X_URL}
-                  rel="noopener noreferrer"
-                  target="_blank"
-                >
-                  Follow on <XLogo />
-                </a>
-              </div>
+              <p className="max-w-xs font-[family-name:var(--font-serif)] text-4xl italic leading-tight">{SITE.tagline}</p>
+              <a className="mt-6 inline-flex items-center gap-2 text-sm text-[#f1ece3]/60 transition-colors hover:text-[#ff5b1f]" href={X_URL} rel="noopener noreferrer" target="_blank">
+                <XLogo /> @Bngrithvik
+              </a>
             </div>
-
             <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
               {FOOTER_COLS.map((c) => (
                 <div key={c.title}>
-                  <div className="mb-5 font-mono text-[11px] uppercase tracking-[0.18em] text-neutral-500">{c.title}</div>
+                  <div className="mb-5 font-mono text-[10px] uppercase tracking-[0.2em] text-[#f1ece3]/40">{c.title}</div>
                   <ul className="space-y-3 text-[15px]">
-                    {c.links.map(([l, h]) => {
-                      const external = !h.startsWith("/") && !h.startsWith("#");
-                      return (
-                        <li key={l}>
-                          {h.startsWith("http") ? (
-                            <a className="group inline-flex items-center text-neutral-800 transition-colors hover:text-black" href={h} rel="noopener noreferrer" target="_blank">
-                              {l}
-                              <ArrowUpRight className="ml-1 h-3 w-3 text-neutral-400 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
-                            </a>
-                          ) : (
-                            <SmartLink className="group inline-flex items-center text-neutral-800 transition-colors hover:text-black" href={h}>
-                              {l}
-                              {external && <ArrowUpRight className="ml-1 h-3 w-3 text-neutral-400" />}
-                            </SmartLink>
-                          )}
-                        </li>
-                      );
-                    })}
+                    {c.links.map(([l, h]) => (
+                      <li key={l}>
+                        <SmartLink className="text-[#f1ece3]/80 transition-colors hover:text-[#ff5b1f]" href={h}>
+                          {l}
+                        </SmartLink>
+                      </li>
+                    ))}
                   </ul>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* room for the scene to breathe, then the wordmark etched over the water */}
-          <div className="h-[7rem] sm:h-[11rem] md:h-[13rem]" />
-          <motion.div
-            aria-hidden
-            className="select-none whitespace-nowrap bg-clip-text text-center font-mono text-[clamp(4rem,17vw,14rem)] font-extrabold leading-[0.8] tracking-[-0.07em] text-transparent"
-            style={{
-              backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.92) 1.6px, transparent 2px)",
-              backgroundSize: "6px 6px",
-              ...(reduce ? {} : { opacity: markOpacity, letterSpacing: markSpacing }),
-            }}
-          >
-            nullchat
-          </motion.div>
+          <div aria-label="nullchat" className="mt-20 flex select-none justify-center overflow-hidden whitespace-nowrap pb-[0.08em] font-[family-name:var(--font-serif)] text-[clamp(5rem,23vw,22rem)] italic leading-[0.85] tracking-[-0.04em]">
+            {"nullchat".split("").map((c, i) => (
+              <FireLetter char={c} fire={fire} i={i} key={i} p={footP} reduce={!!reduce} />
+            ))}
+          </div>
 
-          <div className="mt-4 flex flex-col items-center justify-between gap-3 border-t border-white/30 py-5 font-mono text-[11px] text-white/85 sm:flex-row">
+          <div className="mt-8 flex flex-col items-center justify-between gap-3 border-t border-[#f1ece3]/10 pt-6 font-mono text-[11px] text-[#f1ece3]/50 sm:flex-row">
             <span>© 2026 Nullchat · Anonymous by design.</span>
-            <div className="flex items-center gap-5">
-              <Link className="flex items-center gap-2 transition-colors hover:text-white" href="/status">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
-                System status
+            <div className="flex items-center gap-6">
+              <Link className="transition-colors hover:text-[#f1ece3]" href="/status">
+                Status
               </Link>
-              <a
-                className="transition-colors hover:text-white"
-                href="#top"
-                onClick={(e) => {
-                  e.preventDefault();
-                  window.scrollTo({ top: 0, behavior: "smooth" });
-                }}
-              >
+              <a className="transition-colors hover:text-[#f1ece3]" href="#top">
                 Back to top ↑
               </a>
             </div>

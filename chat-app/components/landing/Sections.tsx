@@ -1,554 +1,410 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { motion, useReducedMotion, useScroll, useTransform, type MotionValue } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { AnimatePresence, motion, useInView, useMotionValue, useReducedMotion, useScroll, useSpring, useTransform, type MotionValue } from "framer-motion";
 import {
+  ArrowUpRight,
   AudioLines,
   BarChart3,
-  Check,
+  CalendarClock,
   Fingerprint,
   Flame,
-  Globe,
   ImagePlus,
+  Inbox,
   Link2,
   Lock,
-  MessageSquare,
+  MessageCircleQuestion,
   MessageSquareReply,
-  Minus,
-  TimerOff,
-  UserCheck,
+  PartyPopper,
+  Plus,
   Users,
-  X,
   type LucideIcon,
 } from "lucide-react";
 import { FAQ, USE_CASES } from "@/lib/siteContent";
-import Image from "next/image";
-import Link from "next/link";
-import { ArrowUpRight } from "lucide-react";
-import { Hatch, Heading, Note, Rings, ScrollRise, ScrollWords, Spot, Threads } from "@/components/landing/parts";
+import { InkParagraph, Kicker, RiseWords, Stamp, ease } from "@/components/landing/ui";
 
-function Reveal({ children, delay = 0, className }: { children: React.ReactNode; delay?: number; className?: string }) {
+const wrap = "mx-auto max-w-7xl px-5 sm:px-8";
+const serif = "font-[family-name:var(--font-serif)]";
+
+/* ------------------------------------------------------------------ */
+/* Features: an index you can run your cursor down                     */
+/* ------------------------------------------------------------------ */
+
+const FEATURES: [LucideIcon, string, string][] = [
+  [Fingerprint, "Anonymous names", "A temporary name that lasts for the session and disappears when you leave."],
+  [Flame, "Burn mode", "Every message turns to sand after the time you choose, for everyone in the room."],
+  [Link2, "One-time links", "Give each person a link that works once. Forwarded or copied, it's already dead."],
+  [Lock, "Room passwords", "Put a password on top of the link for rooms that need a second lock."],
+  [Users, "Member limits", "Cap the room at any size, or make it invite-only."],
+  [ImagePlus, "Images up to 25MB", "Share pictures freely. They're deleted when the room ends."],
+  [AudioLines, "Voice messages", "Record and send voice notes without leaving the chat."],
+  [BarChart3, "Live polls", "Single or multiple choice, with results landing in real time."],
+  [MessageSquareReply, "Replies & mentions", "Reply to a message or mention someone so busy rooms stay readable."],
+];
+
+function FeatureRow({ i, icon: Icon, title, body, onHover }: { i: number; icon: LucideIcon; title: string; body: string; onHover: (i: number | null) => void }) {
+  return (
+    <motion.li
+      className="group relative cursor-default overflow-hidden"
+      initial="off"
+      onMouseEnter={() => onHover(i)}
+      onMouseLeave={() => onHover(null)}
+      viewport={{ once: true, margin: "-8% 0px" }}
+      whileInView="on"
+    >
+      <motion.span
+        className="absolute inset-x-0 top-0 h-px origin-left bg-[#171412]/20"
+        transition={{ duration: 0.9, ease, delay: 0.05 }}
+        variants={{ off: { scaleX: 0 }, on: { scaleX: 1 } }}
+      />
+      {/* ink floods up from the bottom on hover */}
+      <span className="absolute inset-0 origin-bottom scale-y-0 bg-[#171412] transition-transform duration-500 ease-[cubic-bezier(0.2,0.7,0.2,1)] group-hover:scale-y-100" />
+      <motion.div
+        className="relative grid grid-cols-[2.5rem_1fr_auto] items-center gap-4 px-2 py-6 transition-colors duration-500 group-hover:text-[#f1ece3] md:grid-cols-[4rem_1.1fr_1fr_3rem] md:gap-8 md:px-4 md:py-8"
+        transition={{ duration: 0.8, ease, delay: 0.1 }}
+        variants={{ off: { opacity: 0, y: 24 }, on: { opacity: 1, y: 0 } }}
+      >
+        <span className="font-mono text-[11px] tracking-[0.2em] text-[#171412]/45 transition-colors duration-500 group-hover:text-[#ff5b1f]">
+          {String(i + 1).padStart(2, "0")}
+        </span>
+        <span className={`${serif} text-3xl leading-none tracking-[-0.01em] transition-transform duration-500 group-hover:translate-x-3 md:text-5xl`}>{title}</span>
+        <span className="hidden text-[15px] leading-relaxed text-[#171412]/60 transition-colors duration-500 group-hover:text-[#f1ece3]/70 md:block">{body}</span>
+        <Icon className="h-6 w-6 justify-self-end text-[#171412]/60 transition-all duration-500 group-hover:rotate-12 group-hover:scale-125 group-hover:text-[#ff5b1f]" strokeWidth={1.5} />
+      </motion.div>
+    </motion.li>
+  );
+}
+
+/** A small ember card that trails the cursor over the list, showing the row's icon. */
+function HoverPreview({ index, x, y }: { index: number | null; x: MotionValue<number>; y: MotionValue<number> }) {
+  const Icon = index === null ? null : FEATURES[index][0];
   return (
     <motion.div
-      className={className}
-      initial={{ opacity: 0, y: 28 }}
-      transition={{ duration: 0.7, delay, ease: [0.21, 0.6, 0.35, 1] }}
-      viewport={{ once: true, margin: "-80px" }}
-      whileInView={{ opacity: 1, y: 0 }}
+      animate={{ opacity: index === null ? 0 : 1, scale: index === null ? 0.6 : 1, rotate: index === null ? -8 : -4 }}
+      className="pointer-events-none absolute left-0 top-0 z-20 hidden h-36 w-28 -translate-x-1/2 -translate-y-1/2 flex-col justify-between rounded-2xl bg-[#ff5b1f] p-3 text-[#171412] shadow-[0_24px_50px_-20px_rgba(120,40,0,0.7)] md:flex"
+      style={{ x, y }}
+      transition={{ type: "spring", stiffness: 300, damping: 24 }}
     >
-      {children}
+      <span className="font-mono text-[10px] tracking-[0.2em]">{index === null ? "" : String(index + 1).padStart(2, "0")}</span>
+      <AnimatePresence mode="popLayout">
+        {Icon && (
+          <motion.span animate={{ opacity: 1, y: 0, rotate: 0 }} className="self-center" exit={{ opacity: 0, y: -16, rotate: 20 }} initial={{ opacity: 0, y: 16, rotate: -20 }} key={index}>
+            <Icon className="h-12 w-12" strokeWidth={1.2} />
+          </motion.span>
+        )}
+      </AnimatePresence>
+      <span className="font-mono text-[9px] uppercase tracking-[0.16em] opacity-70">0 bytes kept</span>
     </motion.div>
   );
 }
 
-const wrap = "mx-auto max-w-6xl px-5 sm:px-8";
-
-/* ------------------------------------------------------------------ */
-/* Spotlight: "what's stored? nothing."                                */
-/* ------------------------------------------------------------------ */
-
-function Bars({ widths }: { widths: string[] }) {
+export function Features() {
+  const reduce = useReducedMotion();
+  const [hover, setHover] = useState<number | null>(null);
+  const mx = useMotionValue(0);
+  const my = useMotionValue(0);
+  const x = useSpring(mx, { stiffness: 260, damping: 26, mass: 0.5 });
+  const y = useSpring(my, { stiffness: 260, damping: 26, mass: 0.5 });
   return (
-    <div className="mt-2.5 space-y-1.5">
-      {widths.map((w, i) => (
-        <div className="h-[5px] rounded-full bg-white/10" key={i} style={{ width: w }} />
-      ))}
-    </div>
+    <section className="py-28 md:py-40" id="features">
+      <div className={wrap}>
+        <div className="grid gap-8 md:grid-cols-2 md:items-end">
+          <div>
+            <Kicker n="04">Features</Kicker>
+            <h2 className={`${serif} mt-6 text-6xl leading-[0.9] tracking-[-0.02em] text-[#171412] md:text-8xl`}>
+              <RiseWords text="Small features." />
+              <br />
+              <RiseWords className="italic text-[#ff5b1f]" delay={0.15} text="Zero residue." />
+            </h2>
+          </div>
+          <InkParagraph
+            className="max-w-md text-lg leading-relaxed text-[#171412] md:justify-self-end"
+            text="Everything a group chat needs, and nothing that outlives it. No profile to fill in, no archive to clean up, no settings buried three menus deep."
+          />
+        </div>
+        <ul
+          className="relative mt-16 border-b border-[#171412]/20"
+          onMouseMove={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            mx.set(e.clientX - r.left + 90);
+            my.set(e.clientY - r.top);
+          }}
+        >
+          {FEATURES.map(([icon, title, body], i) => (
+            <FeatureRow body={body} i={i} icon={icon} key={title} onHover={setHover} title={title} />
+          ))}
+          {!reduce && <HoverPreview index={hover} x={x} y={y} />}
+        </ul>
+      </div>
+    </section>
   );
 }
 
-const REPORT_ROWS = [
-  { icon: Fingerprint, t: "Anonymous names", chip: "No account", box: "border-red-400/25 bg-red-400/[0.06]", text: "text-red-300", bars: ["88%", "64%"] },
-  { icon: Flame, t: "Burn mode", chip: "5 min", box: "border-amber-400/25 bg-amber-400/[0.05]", text: "text-amber-300", bars: ["80%", "52%"] },
-  { icon: Link2, t: "One-time invite links", chip: "3 live", box: "border-sky-400/25 bg-sky-400/[0.05]", text: "text-sky-300", bars: ["70%"] },
-  { icon: TimerOff, t: "Media cleanup", chip: "Automatic", box: "border-emerald-400/25 bg-emerald-400/[0.05]", text: "text-emerald-300", bars: ["46%"] },
+/* ------------------------------------------------------------------ */
+/* Use cases: cards that stack as you scroll                           */
+/* ------------------------------------------------------------------ */
+
+const TONES = [
+  { bg: "#ff5b1f", fg: "#171412", sub: "rgba(23,20,18,0.72)", icon: MessageCircleQuestion },
+  { bg: "#171412", fg: "#f1ece3", sub: "rgba(241,236,227,0.62)", icon: PartyPopper },
+  { bg: "#d9cebc", fg: "#171412", sub: "rgba(23,20,18,0.66)", icon: CalendarClock },
+  { bg: "#fbf8f2", fg: "#171412", sub: "rgba(23,20,18,0.62)", icon: Inbox },
 ];
 
-function RoomReport({ pressed }: { pressed?: MotionValue<number> }) {
+function StackCard({ i, p, total }: { i: number; p: MotionValue<number>; total: number }) {
+  const u = USE_CASES[i];
+  const t = TONES[i % TONES.length];
+  const Icon = t.icon;
+  const scale = useTransform(p, [i / total, 1], [1, 1 - (total - i) * 0.045]);
+  const iconRotate = useTransform(p, [Math.max(0, (i - 1) / total), i / total], [-24, 0]);
   return (
-    <div className="relative overflow-hidden rounded-b-2xl border border-t-0 border-white/10 bg-[#0c0c0d] shadow-[0_40px_120px_-50px_#000]">
-      <div className="flex items-start justify-between gap-4 border-b border-white/[0.07] p-5">
-        <div>
-          <div className="text-base font-medium text-white">Room report</div>
-          <div className="mt-1 font-mono text-[10px] text-white/35">void-7x2k · ephemeral</div>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="grid h-12 w-12 place-items-center rounded-full border-2 border-emerald-500/80 font-mono text-sm text-white">0</span>
-          <div className="text-right">
-            <div className="text-sm font-medium text-white">Bytes kept</div>
-            <div className="font-mono text-[10px] text-white/35">after the room closes</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-2.5 p-3">
-        {REPORT_ROWS.map((r) => (
-          <div className={`rounded-xl border px-4 py-3.5 ${r.box}`} key={r.t}>
-            <div className="flex items-center justify-between">
-              <span className={`flex items-center gap-2 text-sm font-medium ${r.text}`}>
-                <r.icon className="h-4 w-4" />
-                {r.t}
-              </span>
-              <span className="rounded-md bg-white/[0.06] px-2 py-0.5 font-mono text-[10px] text-white/55">{r.chip}</span>
-            </div>
-            <Bars widths={r.bars} />
-          </div>
-        ))}
-      </div>
-
-      <div className="flex items-center justify-between border-t border-white/[0.07] px-3 py-3">
-        <span className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-white/70">Invite</span>
-        <div className="flex gap-2">
-          <span className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-white/70">One-time link</span>
-          <motion.span
-            className="flex items-center gap-1.5 rounded-lg border border-orange-400/30 bg-orange-400/10 px-3 py-1.5 text-xs text-orange-200"
-            style={pressed ? { scale: pressed } : undefined}
-          >
-            <Flame className="h-3.5 w-3.5" /> Close room
+    <div className="sticky top-0 flex h-screen items-center justify-center">
+      <motion.article
+        className="relative flex h-[62vh] min-h-[22rem] w-full max-w-5xl origin-top flex-col justify-between overflow-hidden rounded-[28px] p-7 shadow-[0_-20px_60px_-30px_rgba(23,20,18,0.45)] md:p-12"
+        style={{ scale, top: `calc(-4vh + ${i * 26}px)`, backgroundColor: t.bg, color: t.fg }}
+      >
+        <div className="flex items-start justify-between">
+          <span className="font-mono text-[11px] uppercase tracking-[0.2em]" style={{ color: t.sub }}>
+            Use case {String(i + 1).padStart(2, "0")} / {String(total).padStart(2, "0")}
+          </span>
+          <motion.span style={{ rotate: iconRotate }}>
+            <Icon className="h-14 w-14 md:h-24 md:w-24" strokeWidth={1} />
           </motion.span>
         </div>
-      </div>
+        <div className="max-w-2xl">
+          <h3 className={`${serif} text-4xl leading-[0.95] tracking-[-0.01em] md:text-7xl`}>{u.title}</h3>
+          <p className="mt-5 max-w-xl text-base leading-relaxed md:text-lg" style={{ color: t.sub }}>
+            {u.body}
+          </p>
+        </div>
+      </motion.article>
     </div>
   );
 }
-
-function Cursor() {
-  return (
-    <svg fill="none" height="26" viewBox="0 0 24 26" width="24">
-      <path d="M3 2 L3 20 L8 15.5 L11.5 23 L14.5 21.6 L11 14.4 L18 14.2 Z" fill="#fff" stroke="#000" strokeLinejoin="round" strokeWidth="1.4" />
-    </svg>
-  );
-}
-
-/**
- * Pinned while you scroll: a small button stretches into a slot, then the room
- * report prints out of it bottom-first, then the notes and a cursor arrive.
- */
-export function Spotlight() {
-  const ref = useRef<HTMLDivElement>(null);
-  const reduce = useReducedMotion();
-  const { scrollYProgress: p } = useScroll({ target: ref, offset: ["start start", "end end"] });
-
-  const slotW = useTransform(p, [0.02, 0.16], [176, 704]);
-  const slotH = useTransform(p, [0.02, 0.16], [44, 22]);
-  const slotBg = useTransform(p, [0.06, 0.16], ["rgb(232,232,234)", "rgb(26,26,28)"]);
-  const labelO = useTransform(p, [0.02, 0.07], [1, 0]);
-  const headO = useTransform(p, [0.08, 0.2], [0, 1]);
-  const headY = useTransform(p, [0.08, 0.2], [24, 0]);
-  const cardY = useTransform(p, [0.18, 0.7], ["-101%", "0%"]);
-  const glowO = useTransform(p, [0.4, 0.7], [0, 1]);
-  const notesO = useTransform(p, [0.72, 0.8], [0, 1]);
-  const cursorO = useTransform(p, [0.8, 0.84], [0, 1]);
-  const cursorX = useTransform(p, [0.8, 0.92], [190, 0]);
-  const cursorY = useTransform(p, [0.8, 0.92], [150, 0]);
-  const pressed = useTransform(p, [0.92, 0.95, 0.98], [1, 0.9, 1]);
-
-  // with reduced motion, show the finished state and skip the choreography
-  const at = <T,>(v: MotionValue<T>, done: T) => (reduce ? done : v);
-
-  return (
-    <div className="relative h-[300vh]" ref={ref}>
-      <section className="sticky top-0 flex min-h-screen flex-col items-center overflow-x-clip px-5 pt-24 md:h-screen md:overflow-hidden md:pt-[max(6rem,11vh)]">
-        <Rings />
-
-        <motion.div className="relative" style={{ opacity: at(headO, 1), y: at(headY, 0) }}>
-          <Heading
-            still
-            soft="Nothing is stored."
-            strong="Talk without a trail."
-            sub="Nullchat keeps nothing once the room ends, and the room only exists while you're in it."
-          />
-        </motion.div>
-
-        <div className="relative mt-12 w-full max-w-xl">
-          {/* the slot the report prints out of */}
-          <motion.div
-            aria-hidden
-            className="absolute left-1/2 top-0 z-20 grid -translate-y-1/2 place-items-center rounded-full border border-white/15 shadow-[0_10px_30px_-10px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.18)]"
-            style={{ width: at(slotW, 704), height: at(slotH, 22), backgroundColor: at(slotBg, "rgb(26,26,28)"), x: "-50%", maxWidth: "calc(100vw - 2.5rem)" }}
-          >
-            <motion.span className="whitespace-nowrap text-sm font-semibold text-black" style={{ opacity: at(labelO, 0) }}>
-              What&apos;s stored?
-            </motion.span>
-          </motion.div>
-
-          <motion.div aria-hidden className="absolute -inset-10 -z-10 rounded-full bg-white/[0.05] blur-3xl" style={{ opacity: at(glowO, 1) }} />
-
-          {/* clip: anything above the slot stays hidden, so the bottom of the card shows first */}
-          <div className="relative overflow-hidden">
-            <motion.div style={{ y: at(cardY, "0%") }}>
-              <RoomReport pressed={reduce ? undefined : pressed} />
-            </motion.div>
-          </div>
-
-          <motion.div className="pointer-events-none absolute inset-0" style={{ opacity: at(notesO, 1) }}>
-            <Note className="-left-48 top-[104px]" color="#ff8f8f">
-              no accounts
-            </Note>
-            <Note arrow="left" className="-right-[17rem] top-[190px]" color="#f0a35e">
-              burns on schedule
-            </Note>
-            <Note className="-left-44 top-[268px]" color="#7cc4ff">
-              works once
-            </Note>
-            <Note arrow="left" className="-right-[15.5rem] top-[340px]" color="#6ee7a8">
-              wiped on close
-            </Note>
-          </motion.div>
-
-          {!reduce && (
-            <motion.div className="pointer-events-none absolute bottom-1 right-12 z-30" style={{ opacity: cursorO, x: cursorX, y: cursorY }}>
-              <Cursor />
-            </motion.div>
-          )}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Bento                                                               */
-/* ------------------------------------------------------------------ */
-
-function BurnMock() {
-  const msgs = [
-    { t: "send the doc before it expires", o: 1, b: 0, me: false },
-    { t: "sent. dropping the link after this.", o: 0.55, b: 1, me: true },
-    { t: "got it. closing the room.", o: 0.22, b: 3, me: false },
-  ];
-  return (
-    <div className="rounded-xl border border-white/10 bg-[#0b0b0c] p-4">
-      <div className="mb-3 flex items-center justify-between font-mono text-[10px] text-white/40">
-        <span>burn mode</span>
-        <span className="rounded-full border border-amber-400/30 px-2 py-0.5 text-amber-300">sand in 04:59</span>
-      </div>
-      <div className="space-y-2">
-        {msgs.map((m, i) => (
-          <div className={m.me ? "flex justify-end" : "flex"} key={m.t}>
-            <motion.span
-              animate={{ opacity: [1, 1, m.o, m.o, 1], filter: ["blur(0px)", "blur(0px)", `blur(${m.b + 1}px)`, `blur(${m.b + 1}px)`, "blur(0px)"], y: [0, 0, -2, -2, 0] }}
-              className={`rounded-2xl px-3.5 py-2 text-xs ${m.me ? "bg-white text-black" : "bg-white/10 text-white"}`}
-              transition={{ duration: 5, delay: i * 0.5, ease: "easeInOut", repeat: Infinity, times: [0, 0.25, 0.5, 0.85, 1] }}
-            >
-              {m.t}
-            </motion.span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function LinksMock() {
-  return (
-    <div className="space-y-2 rounded-xl border border-white/10 bg-[#0b0b0c] p-4 font-mono text-[11px]">
-      {[
-        ["/j/8f3k…", "burned", "text-red-300 border-red-400/30 bg-red-400/10"],
-        ["/j/2m9q…", "ready", "text-emerald-300 border-emerald-400/30 bg-emerald-400/10"],
-        ["/j/x71d…", "ready", "text-emerald-300 border-emerald-400/30 bg-emerald-400/10"],
-      ].map(([u, s, c]) => (
-        <div className="flex items-center justify-between rounded-lg border border-white/[0.07] px-3 py-2" key={u}>
-          <span className={s === "burned" ? "text-white/25 line-through" : "text-white/70"}>nullchat.tech{u}</span>
-          <span className={`rounded-full border px-2 py-0.5 ${c}`}>{s}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function MediaMock() {
-  const bars = [6, 14, 9, 20, 12, 24, 8, 18, 26, 10, 16, 7, 21, 13, 9, 17, 11, 6];
-  return (
-    <div className="grid grid-cols-[1.1fr_1fr] gap-3 rounded-xl border border-white/10 bg-[#0b0b0c] p-4">
-      <div className="relative aspect-[4/3] overflow-hidden rounded-lg border border-white/10 bg-white/5">
-        <Image alt="A shared photo of a lone tree above misty hills" className="object-cover" fill sizes="(min-width: 768px) 260px, 45vw" src="/landing/shared-photo-2.webp" />
-        <span className="absolute left-1.5 top-1.5 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[9px] text-white/70 backdrop-blur">ghost_41</span>
-        <span className="absolute bottom-1.5 right-1.5 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[9px] text-white/70 backdrop-blur">IMG_2087.jpg · 3.8MB</span>
-      </div>
-      <div className="flex flex-col justify-center gap-2">
-        <div className="flex h-8 items-center gap-[3px] rounded-full bg-white/10 px-3">
-          {bars.map((h, i) => (
-            // each bar breathes on its own rhythm so the note looks like it's playing
-            <motion.span
-              animate={{ scaleY: [0.35, 1, 0.55, 0.9, 0.35] }}
-              className="w-[2px] rounded-full bg-white/70"
-              key={i}
-              style={{ height: h }}
-              transition={{ duration: 0.9 + (i % 5) * 0.17, delay: (i * 0.07) % 0.6, ease: "easeInOut", repeat: Infinity }}
-            />
-          ))}
-        </div>
-        <div className="flex items-center gap-1.5 font-mono text-[10px] text-white/40">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-          voice note · 0:12
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PollMock() {
-  return (
-    <div className="space-y-2.5 rounded-xl border border-white/10 bg-[#0b0b0c] p-4">
-      <div className="text-xs font-medium text-white">Friday plan?</div>
-      {[
-        ["Pizza", 62],
-        ["Movie night", 28],
-        ["Skip it", 10],
-      ].map(([l, p]) => (
-        <div className="relative overflow-hidden rounded-lg border border-white/10 px-3 py-2 text-xs text-white" key={l}>
-          <motion.span
-            className="absolute inset-y-0 left-0 bg-white/15"
-            initial={{ width: 0 }}
-            transition={{ duration: 1, ease: "easeOut" }}
-            viewport={{ once: true }}
-            whileInView={{ width: `${p}%` }}
-          />
-          <span className="relative flex justify-between">
-            {l}
-            <span className="font-mono text-white/50">{p}%</span>
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-const BENTO = [
-  { mock: <BurnMock />, title: "Messages that turn to sand", body: "Set burn mode and every message disappears after the time you choose, for everyone in the room." },
-  { mock: <LinksMock />, title: "Invite links that burn", body: "Make a one-time link for each person. It works once, then it's dead, even if someone copied it." },
-  { mock: <MediaMock />, title: "Images and voice, gone with the room", body: "Share pictures up to 25MB and record voice notes. All of it is deleted when the room ends." },
-  { mock: <PollMock />, title: "Polls, replies and mentions", body: "Run single or multiple choice polls, reply to specific messages and mention people by name." },
-];
-
-export function Bento() {
-  return (
-    <section className="relative overflow-hidden border-t border-white/[0.06] py-24 md:py-36" id="features">
-      <Spot />
-      <div className={wrap}>
-        <Heading align="right" soft="to stay private" strong="Everything your room needs" />
-        <div className="mt-14 grid gap-4 md:grid-cols-2">
-          {BENTO.map((b, i) => (
-            <ScrollRise key={b.title} lag={i % 2}>
-              <div className="relative h-full overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.05] to-white/[0.01] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.07)] transition-colors duration-500 hover:border-white/20 md:p-6">
-                <Hatch className={i % 2 ? "-left-2 top-6 h-44 w-12" : "-right-2 top-6 h-44 w-12"} />
-                <div className="relative">{b.mock}</div>
-                <h3 className="mt-6 text-xl font-medium tracking-[-0.02em] text-white">{b.title}</h3>
-                <p className="mt-2 max-w-md text-sm leading-relaxed text-white/45">{b.body}</p>
-              </div>
-            </ScrollRise>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Capability grid                                                     */
-/* ------------------------------------------------------------------ */
-
-const GROUPS: { label: string; items: [LucideIcon, string][] }[] = [
-  { label: "Privacy", items: [[Fingerprint, "Anonymous names"], [TimerOff, "Ephemeral rooms"], [Flame, "Burn mode"], [Lock, "Room passwords"]] },
-  { label: "Access", items: [[Link2, "One-time links"], [UserCheck, "Invite-only rooms"], [Users, "Member limits"], [Globe, "Runs in the browser"]] },
-  { label: "Conversation", items: [[ImagePlus, "Images up to 25MB"], [AudioLines, "Voice messages"], [BarChart3, "Live polls"], [MessageSquareReply, "Replies and mentions"]] },
-];
-
-export function Capabilities() {
-  return (
-    <section className="py-12 md:py-20">
-      <div className={wrap}>
-        <Heading align="left" soft="nothing you don't." strong="Everything you need," />
-        <div className="mt-12 space-y-8">
-          {GROUPS.map((g) => (
-            <Reveal key={g.label}>
-              <div className="mb-3 flex items-center gap-3 font-mono text-[11px] uppercase tracking-[0.25em] text-white/50">
-                {g.label}
-                <span className="h-px flex-1 bg-white/[0.08]" />
-              </div>
-              <motion.div
-                className="grid grid-cols-2 border border-white/[0.08] md:grid-cols-4"
-                initial="off"
-                transition={{ staggerChildren: 0.09 }}
-                viewport={{ once: true, margin: "-60px" }}
-                whileInView="on"
-              >
-                {g.items.map(([Icon, label]) => (
-                  <motion.div
-                    className="flex items-center gap-3 border-b border-r border-white/[0.08] px-5 py-5 text-sm text-white transition-colors hover:bg-white/[0.04]"
-                    key={label}
-                    variants={{
-                      off: { opacity: 0.15, backgroundColor: "rgba(255,255,255,0)" },
-                      on: { opacity: 1, backgroundColor: ["rgba(255,255,255,0.09)", "rgba(255,255,255,0)"], transition: { duration: 0.9 } },
-                    }}
-                  >
-                    <Icon className="h-[18px] w-[18px] shrink-0 text-white/70" />
-                    {label}
-                  </motion.div>
-                ))}
-              </motion.div>
-            </Reveal>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Use cases                                                           */
-/* ------------------------------------------------------------------ */
 
 export function UseCases() {
+  const ref = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end end"] });
   return (
-    <section className="border-t border-white/[0.06] py-24 md:py-36" id="use-cases">
+    <section className="pt-28 md:pt-40" id="use-cases">
       <div className={wrap}>
-        <Heading strong="Conversations that" soft="shouldn't stick around." />
-        <div className="mt-14 grid border border-white/[0.08] sm:grid-cols-2">
-          {USE_CASES.map((u, i) => (
-            <ScrollRise className="border-b border-r border-white/[0.08]" key={u.title} lag={i % 2}>
-              <article className="group h-full p-7 transition-colors hover:bg-white/[0.03] md:p-9">
-                <div className="mb-10 flex items-center justify-between font-mono text-[11px] text-white/35">
-                  <span>0{i + 1}</span>
-                  <MessageSquare className="h-4 w-4 transition-colors group-hover:text-white/80" />
-                </div>
-                <h3 className="mb-2 text-xl font-medium tracking-[-0.02em] text-white">{u.title}</h3>
-                <p className="text-sm leading-relaxed text-white/45">{u.body}</p>
-              </article>
-            </ScrollRise>
-          ))}
-        </div>
+        <Kicker n="05">Use cases</Kicker>
+        <h2 className={`${serif} mt-6 max-w-4xl text-6xl leading-[0.9] tracking-[-0.02em] text-[#171412] md:text-8xl`}>
+          <RiseWords text="For conversations that" />{" "}
+          <RiseWords className="italic text-[#ff5b1f]" delay={0.2} text="shouldn't stick around." />
+        </h2>
+      </div>
+      <div className="relative px-5 pb-[8vh] sm:px-8" ref={ref}>
+        {USE_CASES.map((u, i) => (
+          <StackCard i={i} key={u.title} p={scrollYProgress} total={USE_CASES.length} />
+        ))}
       </div>
     </section>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/* Compare                                                             */
+/* The receipt: everything we kept, which is nothing                   */
 /* ------------------------------------------------------------------ */
 
-const COMPARE: { label: string; them: boolean; us: boolean }[] = [
-  { label: "Requires phone number or email", them: true, us: false },
-  { label: "Permanent message history", them: true, us: false },
-  { label: "Profile tied to a real identity", them: true, us: false },
-  { label: "Works instantly from a link", them: false, us: true },
-  { label: "Media deleted when the chat ends", them: false, us: true },
+/** Digits shuffle for a moment, then settle on the real value. */
+function Scramble({ value, active, delay }: { value: string; active: boolean; delay: number }) {
+  const reduce = useReducedMotion();
+  const [shown, setShown] = useState(value);
+  useEffect(() => {
+    if (!active || reduce) return;
+    let tick: ReturnType<typeof setInterval> | undefined;
+    const start = setTimeout(() => {
+      tick = setInterval(() => setShown(String(Math.floor(Math.random() * 9000) + 100)), 45);
+    }, delay * 1000);
+    const stop = setTimeout(() => {
+      if (tick) clearInterval(tick);
+      setShown(value);
+    }, (delay + 0.75) * 1000);
+    return () => {
+      clearTimeout(start);
+      clearTimeout(stop);
+      if (tick) clearInterval(tick);
+    };
+  }, [active, delay, value, reduce]);
+  return <span className="tabular-nums">{shown}</span>;
+}
+
+const RECEIPT: [string, string, string][] = [
+  ["Messages", "0", ""],
+  ["Photos & voice notes", "0", "MB"],
+  ["Accounts", "0", ""],
+  ["Phone numbers", "0", ""],
+  ["Message history", "0", "days"],
 ];
 
-export function Compare() {
-  const ref = useRef<HTMLElement>(null);
-  const { scrollYProgress } = useScroll({ target: ref, offset: ["start end", "center 0.45"] });
-  const draw = useTransform(scrollYProgress, [0.1, 1], [0, 1]);
+const scallop =
+  "radial-gradient(circle at 9px 0, transparent 6px, black 6.5px) top / 18px 51% repeat-x, radial-gradient(circle at 9px 100%, transparent 6px, black 6.5px) bottom / 18px 51% repeat-x";
+
+export function Ledger() {
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { once: true, margin: "-20% 0px" });
   return (
-    <section className="relative overflow-hidden border-t border-white/[0.06] py-24 md:py-36" ref={ref}>
-      <Threads progress={draw} className="-left-56 bottom-6 h-[26rem] w-[72rem] opacity-70 [mask-image:linear-gradient(to_bottom,transparent,black_35%,black_80%,transparent)]" />
-      <div className={`${wrap} relative grid items-center gap-14 lg:grid-cols-[0.9fr_1.1fr]`}>
-        <Reveal>
-          <h2 className="text-[2.5rem] font-medium leading-[1.0] tracking-[-0.05em] text-white md:text-[3.6rem]">
-            <ScrollWords text="Most chat apps" />
+    <section className="py-28 md:py-40">
+      <div className={`${wrap} grid items-center gap-16 lg:grid-cols-[1fr_0.9fr]`}>
+        <div>
+          <Kicker n="07">The receipt</Kicker>
+          <h2 className={`${serif} mt-6 text-6xl leading-[0.9] tracking-[-0.02em] text-[#171412] md:text-8xl`}>
+            <RiseWords text="Most apps keep everything." />
             <br />
-            <ScrollWords text="remember everything." />
-            <br />
-            <ScrollWords className="text-white/45" from={0.08} text="We forget on purpose." />
+            <RiseWords className="italic text-[#ff5b1f]" delay={0.2} text="We print zeros." />
           </h2>
-          <p className="mt-6 max-w-md text-base text-white/50 md:text-lg">
-            No phone number, no profile, no archive. Just a room that exists while you need it.
-          </p>
-          <Link
-            className="mt-9 inline-flex items-center gap-2 rounded-full border border-white/25 px-6 py-3.5 text-sm font-medium text-white transition-colors hover:border-white/60 hover:bg-white/[0.04]"
-            href="/groups"
-          >
-            Open a room <ArrowUpRight className="h-4 w-4" />
-          </Link>
-        </Reveal>
-        <Reveal delay={0.1}>
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0c0c0d]/90 shadow-[0_40px_120px_-50px_#000,inset_0_1px_0_rgba(255,255,255,0.07)] backdrop-blur">
-            <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-6 border-b border-white/10 bg-white/[0.03] px-5 py-4 font-mono text-[11px] uppercase tracking-[0.2em] text-white/40 sm:gap-x-10 sm:px-7">
-              <span />
-              <span className="w-14 text-center sm:w-20">Typical</span>
-              <span className="w-14 text-center text-white sm:w-20">Nullchat</span>
+          <InkParagraph
+            className="mt-8 max-w-md text-lg leading-relaxed text-[#171412]"
+            text="No phone number to sign up, no profile tied to who you are, no archive waiting on a server. When a room closes, this is the whole bill."
+          />
+        </div>
+
+        <motion.div
+          className="relative mx-auto w-full max-w-sm"
+          initial={{ rotate: 4, y: 60, opacity: 0 }}
+          ref={ref}
+          transition={{ duration: 1, ease }}
+          viewport={{ once: true, margin: "-15% 0px" }}
+          whileInView={{ rotate: -2, y: 0, opacity: 1 }}
+        >
+          <div className="bg-[#fbf8f2] px-7 py-10 font-mono text-[13px] text-[#171412] shadow-[0_40px_80px_-40px_rgba(60,40,20,0.55)]" style={{ mask: scallop, WebkitMask: scallop }}>
+            <div className="text-center">
+              <div className={`${serif} text-3xl italic`}>nullchat</div>
+              <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-[#171412]/50">room void-7x2k · closed</div>
             </div>
-            {COMPARE.map((row, i) => (
-              <motion.div
-                className="grid grid-cols-[1fr_auto_auto] items-center gap-x-6 border-b border-white/[0.07] px-5 py-5 transition-colors last:border-b-0 hover:bg-white/[0.02] sm:gap-x-10 sm:px-7"
-                initial={{ opacity: 0, x: 24 }}
-                key={row.label}
-                transition={{ delay: 0.15 + i * 0.1, duration: 0.5, ease: [0.21, 0.6, 0.35, 1] }}
-                viewport={{ once: true, margin: "-80px" }}
-                whileInView={{ opacity: 1, x: 0 }}
-              >
-                <span className="text-sm text-white sm:text-[15px]">{row.label}</span>
-                <span className="grid w-14 place-items-center text-white/50 sm:w-20">
-                  {row.them ? <Check className="h-4 w-4" /> : <Minus className="h-4 w-4 opacity-40" />}
-                </span>
-                <span className="grid w-14 place-items-center sm:w-20">
-                  {row.us ? (
-                    <motion.span
-                      className="grid h-7 w-7 place-items-center rounded-full bg-white text-black shadow-[0_0_16px_rgba(255,255,255,0.35)]"
-                      initial={{ scale: 0 }}
-                      transition={{ delay: 0.5 + i * 0.12, type: "spring", stiffness: 420, damping: 14 }}
-                      viewport={{ once: true, margin: "-80px" }}
-                      whileInView={{ scale: 1 }}
-                    >
-                      <Check className="h-4 w-4" />
-                    </motion.span>
-                  ) : (
-                    <span className="grid h-7 w-7 place-items-center rounded-full border border-white/15 text-white/40">
-                      <X className="h-4 w-4" />
-                    </span>
-                  )}
-                </span>
-              </motion.div>
-            ))}
+            <div className="my-6 border-t border-dashed border-[#171412]/30" />
+            <ul className="space-y-3">
+              {RECEIPT.map(([label, value, unit], i) => (
+                <motion.li
+                  animate={inView ? { opacity: 1, x: 0 } : undefined}
+                  className="flex items-baseline gap-2"
+                  initial={{ opacity: 0, x: -8 }}
+                  key={label}
+                  transition={{ delay: 0.3 + i * 0.18, duration: 0.4 }}
+                >
+                  <span className="uppercase">{label}</span>
+                  <span className="mb-1 flex-1 border-b border-dotted border-[#171412]/35" />
+                  <span>
+                    <Scramble active={inView} delay={0.3 + i * 0.18} value={value} /> {unit}
+                  </span>
+                </motion.li>
+              ))}
+            </ul>
+            <div className="my-6 border-t border-dashed border-[#171412]/30" />
+            <div className="flex items-baseline justify-between text-base font-bold uppercase">
+              <span>Total kept</span>
+              <span>
+                <Scramble active={inView} delay={1.4} value="0" /> B
+              </span>
+            </div>
+            <div
+              aria-hidden
+              className="mx-auto mt-8 h-12 w-48"
+              style={{ backgroundImage: "repeating-linear-gradient(90deg, #171412 0 2px, transparent 2px 4px, #171412 4px 5px, transparent 5px 8px, #171412 8px 11px, transparent 11px 13px)" }}
+            />
+            <div className="mt-4 text-center text-[10px] uppercase tracking-[0.2em] text-[#171412]/50">thanks for leaving nothing behind</div>
           </div>
-        </Reveal>
+          <div className="absolute left-1/2 top-[44%] -translate-x-1/2">
+            <Stamp className="bg-[#fbf8f2]/30 text-2xl" delay={2.2} rotate={-12}>
+              Forgotten
+            </Stamp>
+          </div>
+        </motion.div>
       </div>
     </section>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/* FAQ: question list on the right, the active answer on the left      */
+/* FAQ                                                                 */
 /* ------------------------------------------------------------------ */
 
 export function Faq() {
-  const [open, setOpen] = useState(0);
-  const total = String(FAQ.length).padStart(2, "0");
+  const [open, setOpen] = useState<number | null>(0);
   return (
-    <section className="relative scroll-mt-20 overflow-hidden border-t border-white/[0.07] py-24 md:py-36" id="faq">
-      <Spot />
-      <div className={`${wrap} relative grid gap-12 lg:grid-cols-[1fr_1.15fr] lg:gap-20`}>
-        <div className="lg:sticky lg:top-28 lg:self-start">
-          <div className="flex items-center justify-between border-t border-white/[0.08] pt-4 font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
-            <span>FAQs</span>
-            <span>
-              {String(open + 1).padStart(2, "0")} / {total}
-            </span>
-          </div>
-          <motion.div animate={{ opacity: 1, y: 0 }} initial={{ opacity: 0, y: 10 }} key={open} transition={{ duration: 0.35 }}>
-            <h2 className="mt-8 text-4xl font-medium leading-[1.02] tracking-[-0.045em] text-white md:text-5xl">{FAQ[open].q}</h2>
-            <p className="mt-6 max-w-md text-base leading-relaxed text-white/55">{FAQ[open].a}</p>
-          </motion.div>
+    <section className="border-t border-[#171412]/15 py-28 md:py-40" id="faq">
+      <div className={`${wrap} grid gap-14 lg:grid-cols-[0.8fr_1.2fr]`}>
+        <div className="lg:sticky lg:top-32 lg:self-start">
+          <Kicker n="08">FAQ</Kicker>
+          <h2 className={`${serif} mt-6 text-6xl leading-[0.9] tracking-[-0.02em] text-[#171412] md:text-8xl`}>
+            <RiseWords text="Asked" />
+            <br />
+            <RiseWords className="italic text-[#ff5b1f]" delay={0.1} text="anonymously." />
+          </h2>
+          <p className="mt-6 max-w-xs text-[15px] leading-relaxed text-[#171412]/60">
+            Still curious? Write to{" "}
+            <a className="underline decoration-[#ff5b1f] underline-offset-4" href="mailto:support@nullchat.tech">
+              support@nullchat.tech
+            </a>
+            .
+          </p>
         </div>
+        <div className="border-t border-[#171412]/20">
+          {FAQ.map((item, i) => {
+            const isOpen = open === i;
+            return (
+              <div className="border-b border-[#171412]/20" key={item.q}>
+                <button
+                  aria-expanded={isOpen}
+                  className="group flex w-full items-center justify-between gap-6 py-7 text-left"
+                  onClick={() => setOpen(isOpen ? null : i)}
+                  type="button"
+                >
+                  <span className={`${serif} text-2xl leading-tight text-[#171412] transition-transform duration-500 group-hover:translate-x-2 md:text-4xl`}>{item.q}</span>
+                  <motion.span
+                    animate={{ rotate: isOpen ? 45 : 0, backgroundColor: isOpen ? "#ff5b1f" : "rgba(23,20,18,0)" }}
+                    className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-[#171412]/25 text-[#171412]"
+                    transition={{ type: "spring", stiffness: 400, damping: 22 }}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </motion.span>
+                </button>
+                <AnimatePresence initial={false}>
+                  {isOpen && (
+                    <motion.div
+                      animate={{ height: "auto", opacity: 1 }}
+                      className="overflow-hidden"
+                      exit={{ height: 0, opacity: 0 }}
+                      initial={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.45, ease }}
+                    >
+                      <p className="max-w-2xl pb-8 text-lg leading-relaxed text-[#171412]/65">{item.a}</p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
 
-        <div className="border-t border-white/[0.08]">
-          {FAQ.map((item, i) => (
-            <button
-              aria-pressed={open === i}
-              className={`relative flex w-full items-center justify-between gap-6 border-b border-white/[0.08] px-6 py-6 text-left text-base tracking-tight transition-colors md:text-lg ${
-                open === i ? "bg-white/[0.04] text-white" : "text-white/55 hover:text-white"
-              }`}
-              key={item.q}
-              onClick={() => setOpen(i)}
-              type="button"
-            >
-              {open === i && <span className="absolute inset-y-0 left-0 w-px bg-white" />}
-              {item.q}
-              <span className="font-mono text-[10px] text-white/30">{String(i + 1).padStart(2, "0")}</span>
-            </button>
-          ))}
-        </div>
+/* ------------------------------------------------------------------ */
+/* Closing call to action                                              */
+/* ------------------------------------------------------------------ */
+
+export function Closing() {
+  return (
+    <section className="relative overflow-hidden py-28 text-center md:py-44">
+      <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(40% 50% at 50% 100%, rgba(255,91,31,0.18), transparent 70%)" }} />
+      <div className="relative px-5">
+        <h2 className={`${serif} text-[clamp(4rem,13vw,12rem)] leading-[0.85] tracking-[-0.03em] text-[#171412]`}>
+          <RiseWords text="Say it once." />
+        </h2>
+        <p className="mx-auto mt-6 max-w-md text-lg text-[#171412]/60">Your first room is three seconds away. No account, no download.</p>
+        <Link
+          className="group mt-10 inline-flex items-center gap-3 rounded-full bg-[#171412] py-3 pl-7 pr-3 text-base font-medium text-[#f1ece3] transition-transform hover:-translate-y-0.5"
+          href="/groups"
+        >
+          Start a room
+          <span className="grid h-10 w-10 place-items-center rounded-full bg-[#ff5b1f] text-[#171412] transition-transform duration-500 group-hover:rotate-45">
+            <ArrowUpRight className="h-5 w-5" />
+          </span>
+        </Link>
       </div>
     </section>
   );

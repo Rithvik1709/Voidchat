@@ -1,8 +1,9 @@
-import { Caveat } from "next/font/google";
+import { Instrument_Serif } from "next/font/google";
 
-/** Handwritten voice for the little annotations that point at product mockups. */
-export const hand = Caveat({
-  variable: "--font-hand",
+/** Editorial display face for headlines; body copy stays in Geist. */
+export const serif = Instrument_Serif({
+  variable: "--font-serif",
   subsets: ["latin"],
-  weight: ["500", "600"],
+  weight: "400",
+  style: ["normal", "italic"],
 });
