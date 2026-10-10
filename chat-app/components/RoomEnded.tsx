@@ -1,41 +1,13 @@
-import Link from "next/link";
-import { ArrowRight, Power } from "lucide-react";
+import RoomNotice from "./RoomNotice";
 
 /** Shown when someone opens a room link for a room that has ended or never existed. */
 export default function RoomEnded() {
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-6 text-foreground">
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.05] dark:opacity-[0.07]"
-        style={{
-          backgroundImage:
-            "linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)",
-          backgroundSize: "56px 56px",
-          maskImage: "radial-gradient(ellipse at center, black 10%, transparent 70%)",
-          WebkitMaskImage: "radial-gradient(ellipse at center, black 10%, transparent 70%)",
-        }}
-      />
-      <div className="relative flex max-w-md flex-col items-center text-center">
-        <div className="mb-8 grid h-16 w-16 place-items-center rounded-2xl bg-foreground text-background">
-          <Power className="h-7 w-7" />
-        </div>
-        <div className="mb-4 font-mono text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
-          Room closed
-        </div>
-        <h1 className="text-4xl font-bold leading-[0.95] tracking-tighter md:text-5xl">
-          This room is gone.
-        </h1>
-        <p className="mt-4 text-muted-foreground">
-          The session was ended, or the link was never valid. Rooms don&apos;t come back once they close.
-        </p>
-        <Link
-          className="group mt-8 inline-flex h-12 items-center rounded-full bg-foreground px-8 font-bold text-background transition-transform hover:scale-[1.03] active:scale-95"
-          href="/groups"
-        >
-          Back to groups
-          <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-        </Link>
-      </div>
-    </div>
+    <RoomNotice
+      accent="gone."
+      body={<>The session was ended, or the link was never valid. Rooms don&apos;t come back once they close.</>}
+      label="Room closed · 0 bytes kept"
+      title="This room is"
+    />
   );
 }

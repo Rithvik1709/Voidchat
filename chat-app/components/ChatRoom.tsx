@@ -44,11 +44,11 @@ interface Message {
 
 const getAvatarColor = (name: string) => {
     const shades = [
-        'bg-neutral-950 text-white dark:bg-white dark:text-black',
-        'bg-neutral-700 text-white dark:bg-neutral-300 dark:text-black',
-        'bg-neutral-500 text-white dark:bg-neutral-400 dark:text-black',
-        'bg-neutral-300 text-black dark:bg-neutral-600 dark:text-white',
-        'bg-neutral-200 text-black ring-1 ring-border dark:bg-neutral-800 dark:text-white',
+        'bg-ember text-[#171412]',
+        'bg-primary text-primary-foreground',
+        'bg-[#d9cebc] text-[#171412]',
+        'bg-[#8a3b1c] text-[#f1ece3]',
+        'bg-card text-foreground ring-1 ring-border',
     ];
     let hash = 0;
     for (let i = 0; i < name.length; i++) {
@@ -57,11 +57,6 @@ const getAvatarColor = (name: string) => {
     return shades[Math.abs(hash) % shades.length];
 };
 
-const GRID_BG = {
-    backgroundImage:
-        'linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)',
-    backgroundSize: '56px 56px',
-} as const;
 
 const NO_OPTIONS: RoomOptions = { hasPassword: false, expiresAt: null, serverNow: '', maxMembers: null, inviteOnly: false, burnSeconds: null };
 
@@ -884,12 +879,12 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
     if (error) {
         return (
             <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-background p-4 text-foreground">
-                <div className="pointer-events-none absolute inset-0 opacity-[0.05] dark:opacity-[0.07]" style={{ ...GRID_BG, maskImage: 'radial-gradient(ellipse at center, black 10%, transparent 70%)', WebkitMaskImage: 'radial-gradient(ellipse at center, black 10%, transparent 70%)' }} />
+                <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(45% 40% at 50% 100%, hsl(var(--ember) / 0.12), transparent 70%)' }} />
                 <div className="relative w-full max-w-sm rounded-3xl border border-border bg-card/70 p-8 text-center backdrop-blur">
                     <div className="mx-auto mb-6 grid h-14 w-14 place-items-center rounded-2xl bg-foreground text-background">
                         <Lock className="h-6 w-6" />
                     </div>
-                    <h2 className="mb-2 text-2xl font-bold tracking-tighter">Access denied</h2>
+                    <h2 className="mb-2 font-[family-name:var(--font-serif)] text-4xl leading-none">Access <span className="italic text-ember">denied.</span></h2>
                     <p className="mb-8 text-sm leading-relaxed text-muted-foreground">{error}</p>
                     <Button onClick={() => router.push('/groups')} className="h-11 w-full rounded-full bg-foreground font-bold text-background hover:bg-foreground/90">
                         Return to Groups
@@ -911,17 +906,17 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
     if (!isJoined) {
         return (
             <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4 text-foreground animate-in fade-in duration-500">
-                <div className="pointer-events-none absolute inset-0 opacity-[0.05] dark:opacity-[0.07]" style={{ ...GRID_BG, maskImage: 'radial-gradient(ellipse at center, black 10%, transparent 70%)', WebkitMaskImage: 'radial-gradient(ellipse at center, black 10%, transparent 70%)' }} />
+                <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(45% 40% at 50% 100%, hsl(var(--ember) / 0.12), transparent 70%)' }} />
                 <div className="absolute right-4 top-4 z-10"><ModeToggle /></div>
 
                 <div className="relative w-full max-w-sm">
-                    <div className="absolute -inset-6 -z-10 rounded-[2.5rem] bg-gradient-to-b from-foreground/10 to-transparent blur-2xl" />
-                    <div className="rounded-3xl border border-border bg-card/80 p-8 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.4)] backdrop-blur">
+                    <div className="absolute -inset-10 -z-10 rounded-full bg-ember/15 blur-3xl" />
+                    <div className="rounded-[26px] bg-card p-8 shadow-[0_40px_90px_-30px_rgba(60,40,20,0.55)]">
                         <div className="mb-8 text-center">
-                            <div className="mx-auto mb-6 flex w-fit items-center gap-2 rounded-full border border-border px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                                <Lock className="h-3 w-3" /> End-to-end encrypted
+                            <div className="mx-auto mb-6 flex w-fit items-center gap-2 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                                <span className="h-1.5 w-1.5 rounded-full bg-ember shadow-[0_0_10px_2px_hsl(var(--ember)/0.6)]" /> End-to-end encrypted
                             </div>
-                            <h1 className="text-4xl font-bold leading-[0.95] tracking-tighter">Join the room</h1>
+                            <h1 className="font-[family-name:var(--font-serif)] text-5xl leading-[0.9]">Join the <span className="italic text-ember">room.</span></h1>
                             {groupName && (
                                 <p className="mt-3 truncate font-mono text-xs text-muted-foreground">{groupName}</p>
                             )}
@@ -955,7 +950,7 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                                     required
                                     maxLength={15}
                                     className={cn(
-                                        "h-12 rounded-full border-border bg-background/60 pl-9 font-mono focus-visible:ring-foreground/30",
+                                        "h-12 rounded-full border-border bg-background/60 pl-9 font-mono focus-visible:ring-ember/40",
                                         joinError && "border-destructive focus-visible:ring-destructive"
                                     )}
                                 />
@@ -974,7 +969,7 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                                         }}
                                         required
                                         maxLength={64}
-                                        className="h-12 rounded-full border-border bg-background/60 pl-11 focus-visible:ring-foreground/30"
+                                        className="h-12 rounded-full border-border bg-background/60 pl-11 focus-visible:ring-ember/40"
                                     />
                                 </div>
                             )}
@@ -984,7 +979,7 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                             {isJoining && joinStatus && (
                                 <p className="px-2 text-center text-xs text-muted-foreground" aria-live="polite">{joinStatus}</p>
                             )}
-                            <Button type="submit" size="lg" disabled={isJoining} className="group h-12 w-full rounded-full bg-foreground font-bold text-background transition-transform hover:scale-[1.02] hover:bg-foreground active:scale-95">
+                            <Button type="submit" size="lg" disabled={isJoining} className="group h-12 w-full rounded-full bg-ember font-semibold text-[#171412] shadow-[0_14px_30px_-14px_rgba(120,40,0,0.7)] transition-transform hover:scale-[1.02] hover:bg-ember active:scale-95">
                                 {isJoining ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                                 {isJoining ? 'Please wait…' : inviteMode ? 'Use invite & enter' : 'Enter room'}
                                 {!isJoining && <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />}
@@ -1036,8 +1031,8 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
             {/* Main Chat Area */}
             <div className="relative flex min-w-0 flex-1 flex-col">
                 <div
-                    className="pointer-events-none absolute inset-0 opacity-[0.035] dark:opacity-[0.05]"
-                    style={{ ...GRID_BG, maskImage: 'radial-gradient(ellipse at 50% 0%, black 10%, transparent 70%)', WebkitMaskImage: 'radial-gradient(ellipse at 50% 0%, black 10%, transparent 70%)' }}
+                    className="pointer-events-none absolute inset-0"
+                    style={{ background: 'radial-gradient(45% 40% at 50% 0%, hsl(var(--ember) / 0.12), transparent 70%)' }}
                 />
 
                 {/* Header */}
@@ -1047,25 +1042,25 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                             <ArrowLeft className="h-5 w-5" />
                         </Button>
                         <div className="min-w-0">
-                            <h2 className="max-w-[160px] truncate text-sm font-bold leading-tight tracking-tight sm:max-w-md md:text-base">
+                            <h2 className="max-w-[160px] truncate font-[family-name:var(--font-serif)] text-xl italic leading-tight sm:max-w-md md:text-2xl">
                                 {groupName || "Group Chat"}
                             </h2>
                             <div className="mt-0.5 flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
                                 <span className="flex items-center gap-1.5">
                                     <span className="relative flex h-1.5 w-1.5">
-                                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-foreground opacity-60" />
-                                        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-foreground" />
+                                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ember opacity-60" />
+                                        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-ember" />
                                     </span>
                                     {userCount} online
                                 </span>
                                 <span className="hidden items-center gap-1 sm:flex"><Lock className="h-2.5 w-2.5" /> encrypted</span>
                                 {options.burnSeconds && (
                                     <span className="flex items-center gap-1" title="Messages burn after this long">
-                                        <Flame className="h-2.5 w-2.5" /> burn {describeBurn(options.burnSeconds)}
+                                        <Flame className="h-2.5 w-2.5 text-ember" /> burn {describeBurn(options.burnSeconds)}
                                     </span>
                                 )}
                                 {remainingMs !== null && !timerExpired && (
-                                    <span className={cn("flex items-center gap-1", remainingMs < 60_000 && "text-foreground animate-pulse")}>
+                                    <span className={cn("flex items-center gap-1", remainingMs < 60_000 && "text-ember animate-pulse")}>
                                         <Timer className="h-2.5 w-2.5" /> {formatCountdown(remainingMs)}
                                     </span>
                                 )}
@@ -1098,7 +1093,7 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                             onClick={() => setShowParticipants(!showParticipants)}
                             className={cn(
                                 "h-9 w-9 rounded-full transition-all",
-                                showParticipants ? "bg-foreground text-background hover:bg-foreground/90 hover:text-background" : "text-muted-foreground hover:text-foreground"
+                                showParticipants ? "bg-ember text-[#171412] hover:bg-ember/90 hover:text-[#171412]" : "text-muted-foreground hover:text-foreground"
                             )}
                             title="Toggle Participants"
                         >
@@ -1113,13 +1108,13 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                         {messages.filter(m => !m.isSystem).length === 0 && (
                             <div className="flex flex-col items-center px-6 pb-4 pt-16 text-center animate-in fade-in duration-700">
                                 <div className="relative mb-6 grid h-20 w-20 place-items-center">
-                                    <span className="absolute inset-0 animate-ping rounded-full border border-foreground/20" />
-                                    <span className="absolute inset-3 rounded-full border border-foreground/30" />
+                                    <span className="absolute inset-0 animate-ping rounded-full border border-ember/40" />
+                                    <span className="absolute inset-3 rounded-full border border-ember/50" />
                                     <span className="relative grid h-10 w-10 place-items-center rounded-full bg-foreground text-background">
                                         <Lock className="h-4 w-4" />
                                     </span>
                                 </div>
-                                <h3 className="text-2xl font-bold tracking-tighter">Room is open.</h3>
+                                <h3 className="font-[family-name:var(--font-serif)] text-4xl leading-none">Room is <span className="italic text-ember">open.</span></h3>
                                 <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">
                                     {options.burnSeconds
                                         ? `Burn mode is on: every message turns to sand ${options.burnSeconds} seconds after it appears.`
@@ -1223,7 +1218,7 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                                                         "relative px-4 py-2.5 text-sm break-words whitespace-pre-wrap leading-relaxed", // Added whitespace-pre-wrap
                                                         isMe
                                                             ? "bg-foreground text-background rounded-2xl rounded-tr-md"
-                                                            : "bg-card border border-border rounded-2xl rounded-tl-md text-foreground",
+                                                            : "bg-card shadow-[0_6px_18px_-12px_rgba(60,40,20,0.45)] ring-1 ring-border/60 rounded-2xl rounded-tl-md text-foreground",
                                                         !showHeader && isMe && "rounded-tr-2xl", // Round corners if middle of group
                                                         !showHeader && !isMe && "rounded-tl-2xl"
                                                     )}
@@ -1512,7 +1507,7 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                                 aria-label="Send"
                                 className={cn(
                                     "grid h-10 w-10 shrink-0 place-items-center rounded-full transition-all",
-                                    input.trim() ? "scale-100 bg-foreground text-background hover:scale-105 active:scale-95" : "scale-95 bg-muted text-muted-foreground"
+                                    input.trim() ? "scale-100 bg-ember text-[#171412] shadow-[0_8px_20px_-8px_rgba(120,40,0,0.7)] hover:scale-105 active:scale-95" : "scale-95 bg-muted text-muted-foreground"
                                 )}
                             >
                                 <Send className="h-4 w-4" />
@@ -1579,7 +1574,7 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                         <Card className="w-full max-w-md relative overflow-hidden rounded-[2rem] bg-card border border-border shadow-2xl animate-in zoom-in-95 duration-300 p-6">
                             <div className="space-y-4">
                                 <div className="flex items-center justify-between">
-                                    <h3 className="text-xl font-bold tracking-tight text-foreground">Create Poll</h3>
+                                    <h3 className="font-[family-name:var(--font-serif)] text-3xl leading-none text-foreground">Create a <span className="italic text-ember">poll.</span></h3>
                                     <Button variant="ghost" size="icon" onClick={() => {
                                         setShowPollModal(false);
                                         setPollQuestion('');
@@ -1731,7 +1726,7 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                             <div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-2xl bg-foreground text-background">
                                 <Power className="h-6 w-6" />
                             </div>
-                            <h3 className="text-2xl font-bold tracking-tighter text-foreground">End session?</h3>
+                            <h3 className="font-[family-name:var(--font-serif)] text-4xl leading-none text-foreground">End the <span className="italic text-ember">session?</span></h3>
                             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                                 This closes the room for everyone and permanently deletes all messages and shared media. This can&apos;t be undone.
                             </p>
@@ -1771,7 +1766,7 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                                     <X className="h-6 w-6 text-destructive" />
                                 </div>
                                 <div className="space-y-2">
-                                    <h3 className="text-xl font-bold tracking-tight text-foreground">Leave Chat?</h3>
+                                    <h3 className="font-[family-name:var(--font-serif)] text-3xl leading-none text-foreground">Leave the <span className="italic text-ember">chat?</span></h3>
                                     <p className="text-sm text-muted-foreground">
                                         Are you sure you want to leave? Your presence will be removed and you won&apos;t receive new messages.
                                     </p>
@@ -1845,13 +1840,13 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
             {sessionEnded && (
                 <div className="fixed inset-0 z-[70] flex items-center justify-center bg-background p-6 text-foreground animate-in fade-in duration-500">
                     <div
-                        className="pointer-events-none absolute inset-0 opacity-[0.05] dark:opacity-[0.07]"
-                        style={{ ...GRID_BG, maskImage: 'radial-gradient(ellipse at center, black 10%, transparent 70%)', WebkitMaskImage: 'radial-gradient(ellipse at center, black 10%, transparent 70%)' }}
+                        className="pointer-events-none absolute inset-0"
+                        style={{ background: 'radial-gradient(45% 40% at 50% 100%, hsl(var(--ember) / 0.12), transparent 70%)' }}
                     />
                     <div className="relative flex max-w-md flex-col items-center text-center">
                         <div className="relative mb-8 grid h-24 w-24 place-items-center">
-                            <span className="absolute inset-0 animate-ping rounded-full border border-foreground/20" />
-                            <span className="absolute inset-3 rounded-full border border-foreground/30" />
+                            <span className="absolute inset-0 animate-ping rounded-full border border-ember/40" />
+                            <span className="absolute inset-3 rounded-full border border-ember/50" />
                             <span className="relative grid h-12 w-12 place-items-center rounded-full bg-foreground text-background">
                                 <Power className="h-5 w-5" />
                             </span>
@@ -1859,7 +1854,7 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
                         <div className="mb-4 font-mono text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
                             0 bytes kept
                         </div>
-                        <h2 className="text-4xl font-bold leading-[0.95] tracking-tighter md:text-5xl">Session ended.</h2>
+                        <h2 className="font-[family-name:var(--font-serif)] text-6xl leading-[0.9] md:text-7xl">Session <span className="italic text-ember">ended.</span></h2>
                         <p className="mt-4 text-muted-foreground">
                             {sessionEnded.by === 'timer'
                                 ? "This room's timer ran out."

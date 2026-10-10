@@ -109,22 +109,17 @@ export default function CreateGroupModal({ onClose, creatorId, onSuccess }: { on
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-background/80 p-4 backdrop-blur-md animate-in fade-in duration-200">
-            <div className="relative my-auto w-full max-w-md overflow-hidden rounded-[2rem] border border-border bg-card p-7 shadow-[0_30px_80px_-30px_rgba(0,0,0,0.5)] animate-in zoom-in-95 duration-300 sm:p-8">
-                <div
-                    className="pointer-events-none absolute inset-0 opacity-[0.04]"
-                    style={{
-                        backgroundImage: 'linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)',
-                        backgroundSize: '32px 32px',
-                    }}
-                />
+            <div className="relative my-auto w-full max-w-md overflow-hidden rounded-[26px] bg-card p-7 shadow-[0_40px_90px_-30px_rgba(60,40,20,0.55)] animate-in zoom-in-95 slide-in-from-bottom-4 duration-500 sm:p-8">
+                {/* ember light behind the form */}
+                <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-ember/15 blur-3xl" />
 
                 <div className="relative mb-7 flex items-start justify-between">
                     <div>
-                        <div className="mb-3 flex w-fit items-center gap-2 rounded-full border border-border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                            <Lock className="h-3 w-3" /> {shareLink ? 'Room ready' : 'Encrypted room'}
+                        <div className="mb-3 flex w-fit items-center gap-2 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                            <Lock className="h-3 w-3 text-ember" /> {shareLink ? 'Room ready' : 'Encrypted room'}
                         </div>
-                        <h2 className="text-3xl font-bold leading-none tracking-tighter text-foreground">
-                            {shareLink ? 'Share the link.' : 'New group'}
+                        <h2 className="font-[family-name:var(--font-serif)] text-5xl leading-[0.9] tracking-[-0.01em] text-foreground">
+                            {shareLink ? <>Share the <span className="italic text-ember">link.</span></> : <>New <span className="italic text-ember">room.</span></>}
                         </h2>
                     </div>
                     <Button
@@ -195,10 +190,10 @@ export default function CreateGroupModal({ onClose, creatorId, onSuccess }: { on
                                             <Flame className="h-3 w-3" /> Links
                                         </span>
                                         <div className="grid grid-cols-2 gap-1 rounded-full border border-border p-1 text-xs font-semibold">
-                                            <button className={cn('rounded-full py-2 transition-colors', !inviteOnly ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground')} onClick={() => setInviteOnly(false)} type="button">
+                                            <button className={cn('rounded-full py-2 transition-colors', !inviteOnly ? 'bg-ember text-[#171412]' : 'text-muted-foreground hover:text-foreground')} onClick={() => setInviteOnly(false)} type="button">
                                                 Reusable link
                                             </button>
-                                            <button className={cn('rounded-full py-2 transition-colors', inviteOnly ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground')} onClick={() => setInviteOnly(true)} type="button">
+                                            <button className={cn('rounded-full py-2 transition-colors', inviteOnly ? 'bg-ember text-[#171412]' : 'text-muted-foreground hover:text-foreground')} onClick={() => setInviteOnly(true)} type="button">
                                                 One-time links only
                                             </button>
                                         </div>
@@ -214,10 +209,10 @@ export default function CreateGroupModal({ onClose, creatorId, onSuccess }: { on
                                             <Flame className="h-3 w-3" /> Burn mode
                                         </span>
                                         <div className="grid grid-cols-2 gap-1 rounded-full border border-border p-1 text-xs font-semibold">
-                                            <button className={cn('rounded-full py-2 transition-colors', !burnOn ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground')} onClick={() => setBurnOn(false)} type="button">
+                                            <button className={cn('rounded-full py-2 transition-colors', !burnOn ? 'bg-ember text-[#171412]' : 'text-muted-foreground hover:text-foreground')} onClick={() => setBurnOn(false)} type="button">
                                                 Off
                                             </button>
-                                            <button className={cn('rounded-full py-2 transition-colors', burnOn ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground')} onClick={() => setBurnOn(true)} type="button">
+                                            <button className={cn('rounded-full py-2 transition-colors', burnOn ? 'bg-ember text-[#171412]' : 'text-muted-foreground hover:text-foreground')} onClick={() => setBurnOn(true)} type="button">
                                                 Messages burn
                                             </button>
                                         </div>
@@ -407,7 +402,7 @@ export default function CreateGroupModal({ onClose, creatorId, onSuccess }: { on
                             <Button
                                 type="submit"
                                 disabled={isLoading || !name.trim() || passwordTooShort || Boolean(limitError) || Boolean(burnError)}
-                                className="h-12 rounded-full bg-foreground px-8 font-bold text-background transition-transform hover:scale-[1.03] hover:bg-foreground active:scale-95 disabled:opacity-50"
+                                className="h-12 rounded-full bg-ember px-8 font-semibold text-[#171412] shadow-[0_14px_30px_-14px_rgba(120,40,0,0.7)] transition-transform hover:scale-[1.03] hover:bg-ember active:scale-95 disabled:opacity-50"
                             >
                                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                 Create
