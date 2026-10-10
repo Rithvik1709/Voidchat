@@ -13,6 +13,7 @@ import SandBurn from './SandBurn';
 import { dueIds, mediaPathFromUrl, trackMessages } from '@/lib/burn';
 import { createJoinerKeys, inviteMac, inviteTokenHash, isInviteToken, unwrapRoomKey } from '@/lib/invites';
 import { loadJoinedKey, saveJoinedKey } from '@/lib/inviteSession';
+import { useRoomGuard } from '@/lib/useRoomGuard';
 import {
     createSigner, importPublicKey, verifySignature, messageSigData, voteSigData, updatePins,
     type Signer,
@@ -698,6 +699,23 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
 
         setIsJoined(true);
     };
+
+    // Room safety check: the server ends the room if Llama Guard flags a severe category.
+    // Tell everyone else, then show the usual "room closed" screen.
+    useRoomGuard({
+        groupId,
+        active: isJoined && !hasEnded && Boolean(key),
+        messages,
+        proofRef,
+        onTerminate: () => {
+            channelRef.current
+                ?.send({ type: 'broadcast', event: 'clear', payload: { by: 'Nullchat', at: new Date().toISOString() } })
+                .catch((err) => console.error('Failed to notify participants', err));
+            setMessages([]);
+            setReplyingTo(null);
+            setSessionEnded({ by: 'Nullchat', self: false });
+        },
+    });
 
     const handleEndSession = () => {
         setEndError('');
