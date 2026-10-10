@@ -71,7 +71,16 @@ export default function BurnScroll() {
     <section className="relative h-[280vh] bg-[#171412] text-[#f1ece3]" data-nav="dark" id="burn" ref={ref}>
       <BurntEdge className="absolute inset-x-0 -top-10" />
       <BurntEdge className="absolute inset-x-0 -bottom-10 z-10" flip />
-      <div className="sticky top-0 flex h-screen items-center overflow-hidden">
+      <div
+        className="sticky top-0 flex h-screen items-center overflow-hidden"
+        onMouseMove={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          e.currentTarget.style.setProperty("--mx", `${e.clientX - r.left}px`);
+          e.currentTarget.style.setProperty("--my", `${e.clientY - r.top}px`);
+        }}
+      >
+        {/* a warm glow that follows the cursor, like holding a match up in the dark */}
+        <div aria-hidden className="pointer-events-none absolute inset-0 hidden md:block" style={{ background: "radial-gradient(380px circle at var(--mx, 70%) var(--my, 50%), rgba(255,91,31,0.10), transparent 60%)" }} />
         <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(50% 60% at 75% 55%, rgba(255,91,31,0.10), transparent 70%)" }} />
         <div className="relative mx-auto grid w-full max-w-7xl items-center gap-10 px-5 sm:px-8 lg:grid-cols-[0.9fr_1.1fr] lg:gap-20">
           <div>

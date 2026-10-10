@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { motion, useReducedMotion, useScroll, useSpring, useTransform, type MotionValue } from "framer-motion";
-import { ArrowDown, ArrowUpRight } from "lucide-react";
+import { AnimatePresence, motion, useMotionValueEvent, useReducedMotion, useScroll, useSpring, useTransform, type MotionValue } from "framer-motion";
+import { ArrowDown, ArrowUpRight, Menu, X } from "lucide-react";
 import BurnNote from "@/components/landing/BurnNote";
 import BurnScroll from "@/components/landing/BurnScroll";
 import ProtocolMesh from "@/components/landing/ProtocolMesh";
 import Steps from "@/components/landing/Steps";
 import { Facts, RAIL, SectionRail, ZoomThrough } from "@/components/landing/Moments";
 import { Closing, Faq, Features, Ledger, UseCases } from "@/components/landing/Sections";
-import { BurntEdge, EmberCursor, Embers, FillStatement, Kicker, Magnetic, MatchIntro, PaperGrain, RiseWords, SmoothScroll, VelocityMarquee, ease } from "@/components/landing/ui";
+import { BurntEdge, EmberCursor, Embers, FillStatement, Kicker, Magnetic, MatchIntro, PaperGrain, RiseWords, RollText, SmoothScroll, VelocityMarquee, ease } from "@/components/landing/ui";
 import { serif } from "@/components/landing/fonts";
 import { SITE } from "@/lib/site";
 
@@ -89,7 +89,7 @@ function FireLetter({ char, i, p, fire, reduce }: { char: string; i: number; p: 
   return (
     <motion.span
       aria-hidden
-      className="inline-block bg-clip-text pr-[0.02em] text-transparent"
+      className="inline-block bg-clip-text pr-[0.02em] text-transparent transition-[filter] duration-300 hover:[filter:brightness(1.6)_drop-shadow(0_0_28px_rgba(255,91,31,0.85))]"
       style={{
         backgroundImage: "linear-gradient(to top, #ff5b1f 0%, #ff8a4c 14%, #ffd2b0 26%, rgba(241,236,227,0.12) 42%, rgba(241,236,227,0.12) 100%)",
         backgroundSize: "100% 300%",
@@ -106,6 +106,19 @@ export default function HomePage() {
   const { dark, active, section } = useNavState();
   const { scrollY, scrollYProgress } = useScroll();
   const progress = useSpring(scrollYProgress, { stiffness: 140, damping: 28 });
+  const [menuOpen, setMenuOpen] = useState(false);
+  // phones: a start-a-room bar slides up once the hero's own button is gone, and hides at the end
+  const [showBar, setShowBar] = useState(false);
+  useMotionValueEvent(scrollYProgress, "change", (v) => setShowBar(v > 0.04 && v < 0.93));
+  useEffect(() => {
+    document.documentElement.style.overflow = menuOpen ? "hidden" : "";
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.documentElement.style.overflow = "";
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
 
   // hero: the two lines drift apart as you scroll away
   const lineA = useTransform(scrollY, [0, 700], [0, -160]);
@@ -141,7 +154,7 @@ export default function HomePage() {
           <div className="hidden items-center gap-1 md:flex">
             {NAV.map(([label, id]) => (
               <a
-                className={`relative rounded-full px-3 py-1.5 text-[13px] transition-colors ${active === id ? "" : "opacity-60 hover:opacity-100"}`}
+                className={`group relative rounded-full px-3 py-1.5 text-[13px] transition-colors ${active === id ? "" : "opacity-60 hover:opacity-100"}`}
                 href={`#${id}`}
                 key={id}
               >
@@ -152,24 +165,108 @@ export default function HomePage() {
                     transition={{ type: "spring", stiffness: 400, damping: 34 }}
                   />
                 )}
-                <span className="relative">{label}</span>
+                <span className="relative">
+                  <RollText>{label}</RollText>
+                </span>
               </a>
             ))}
-            <Link className="rounded-full px-3 py-1.5 text-[13px] opacity-60 transition-opacity hover:opacity-100" href="/about">
-              About
+            <Link className="group rounded-full px-3 py-1.5 text-[13px] opacity-60 transition-opacity hover:opacity-100" href="/about">
+              <RollText>About</RollText>
             </Link>
           </div>
-          <a
-            className="flex items-center gap-2 rounded-full bg-[#ff5b1f] px-4 py-2 text-[13px] font-medium text-[#171412] transition-transform hover:-translate-y-px"
-            href={X_URL}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            Follow on <XLogo />
-          </a>
+          <div className="flex items-center gap-1.5">
+            <a
+              className="group flex items-center gap-2 rounded-full bg-[#ff5b1f] px-4 py-2 text-[13px] font-medium text-[#171412] transition-transform hover:-translate-y-px"
+              href={X_URL}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              <RollText>Follow on</RollText> <XLogo />
+            </a>
+            <button
+              aria-expanded={menuOpen}
+              aria-label="Open menu"
+              className={`grid h-9 w-9 place-items-center rounded-full md:hidden ${dark ? "bg-[#f1ece3]/10" : "bg-[#171412]/[0.07]"}`}
+              onClick={() => setMenuOpen(true)}
+              type="button"
+            >
+              <Menu className="h-4 w-4" />
+            </button>
+          </div>
           <motion.span aria-hidden className="absolute inset-x-6 bottom-0 h-px origin-left bg-[#ff5b1f]" style={{ scaleX: progress }} />
         </div>
       </nav>
+
+      {/* phone menu: ink sheet with big serif links */}
+      <AnimatePresence>
+        {menuOpen && (
+          <motion.div
+            animate={{ clipPath: "circle(150% at calc(100% - 40px) 40px)" }}
+            aria-label="Menu"
+            aria-modal="true"
+            className="fixed inset-0 z-[60] flex flex-col bg-[#171412] px-6 pb-10 pt-6 text-[#f1ece3] md:hidden"
+            exit={{ clipPath: "circle(0% at calc(100% - 40px) 40px)" }}
+            initial={{ clipPath: "circle(0% at calc(100% - 40px) 40px)" }}
+            role="dialog"
+            transition={{ duration: 0.6, ease }}
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-[family-name:var(--font-serif)] text-2xl italic">nullchat</span>
+              <button aria-label="Close menu" className="grid h-10 w-10 place-items-center rounded-full bg-[#f1ece3]/10" onClick={() => setMenuOpen(false)} type="button">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <ul className="mt-14 space-y-2">
+              {[...NAV, ["About", "/about"]].map(([label, id], i) => (
+                <li className="overflow-hidden" key={id}>
+                  <motion.a
+                    animate={{ y: "0%" }}
+                    className="flex items-baseline gap-4 font-[family-name:var(--font-serif)] text-5xl leading-tight"
+                    href={id.startsWith("/") ? id : `#${id}`}
+                    initial={{ y: "110%" }}
+                    onClick={() => setMenuOpen(false)}
+                    transition={{ delay: 0.15 + i * 0.06, duration: 0.6, ease }}
+                  >
+                    <span className="font-mono text-[11px] tracking-[0.2em] text-[#ff5b1f]">0{i + 1}</span>
+                    {label}
+                  </motion.a>
+                </li>
+              ))}
+            </ul>
+            <motion.div animate={{ opacity: 1 }} className="mt-auto space-y-3" initial={{ opacity: 0 }} transition={{ delay: 0.55 }}>
+              <Link className="flex items-center justify-between rounded-full bg-[#ff5b1f] py-3 pl-6 pr-3 font-medium text-[#171412]" href="/groups">
+                Start a room <ArrowUpRight className="h-5 w-5" />
+              </Link>
+              <a className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em] text-[#f1ece3]/55" href={X_URL} rel="noopener noreferrer" target="_blank">
+                <XLogo /> @Bngrithvik
+              </a>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* phones: a start-a-room bar that follows you down the page */}
+      <AnimatePresence>
+        {showBar && !menuOpen && (
+          <motion.div
+            animate={{ y: 0, opacity: 1 }}
+            className="fixed inset-x-4 bottom-4 z-40 md:hidden"
+            exit={{ y: 90, opacity: 0 }}
+            initial={{ y: 90, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 320, damping: 30 }}
+          >
+            <Link className="flex items-center justify-between rounded-full bg-[#171412] py-2.5 pl-5 pr-2.5 text-[15px] font-medium text-[#f1ece3] shadow-[0_18px_40px_-14px_rgba(23,20,18,0.7)]" href="/groups">
+              <span className="flex items-center gap-2">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-[#ff5b1f]" />
+                Start a room · free, no signup
+              </span>
+              <span className="grid h-9 w-9 place-items-center rounded-full bg-[#ff5b1f] text-[#171412]">
+                <ArrowUpRight className="h-4 w-4" />
+              </span>
+            </Link>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <main>
         {/* HERO */}
@@ -391,7 +488,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div aria-label="nullchat" className="mt-20 flex select-none justify-center overflow-hidden whitespace-nowrap pb-[0.08em] font-[family-name:var(--font-serif)] text-[clamp(5rem,23vw,22rem)] italic leading-[0.85] tracking-[-0.04em]">
+          <div aria-label="nullchat" className="mt-20 flex cursor-default select-none justify-center overflow-hidden whitespace-nowrap pb-[0.08em] font-[family-name:var(--font-serif)] text-[clamp(5rem,23vw,22rem)] italic leading-[0.85] tracking-[-0.04em]">
             {"nullchat".split("").map((c, i) => (
               <FireLetter char={c} fire={fire} i={i} key={i} p={footP} reduce={!!reduce} />
             ))}

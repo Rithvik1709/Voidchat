@@ -436,3 +436,15 @@ export function FillStatement({ text, className = "" }: { text: string; classNam
     </p>
   );
 }
+
+/** Label that rolls up to a copy of itself on hover (parent needs the `group` class). */
+export function RollText({ children }: { children: string }) {
+  return (
+    <span className="relative inline-flex overflow-hidden">
+      <span className="transition-transform duration-500 ease-[cubic-bezier(0.2,0.7,0.2,1)] group-hover:-translate-y-full">{children}</span>
+      <span aria-hidden className="absolute left-0 top-full transition-transform duration-500 ease-[cubic-bezier(0.2,0.7,0.2,1)] group-hover:-translate-y-full">
+        {children}
+      </span>
+    </span>
+  );
+}
