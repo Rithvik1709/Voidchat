@@ -41,7 +41,8 @@ export async function POST(request: Request, props: { params: Promise<{ groupId:
         try {
             const res = await fetch(`${url.replace(/\/+$/, '')}/check`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
+                // not Authorization: Hugging Face Spaces reserve that header for their own tokens
+                headers: { 'Content-Type': 'application/json', 'x-guard-secret': secret },
                 signal: AbortSignal.timeout(20_000),
                 // the guard only needs a stable room key for caching, not the real id
                 body: JSON.stringify({ room: createHash('sha256').update(groupId).digest('hex'), messages, context }),

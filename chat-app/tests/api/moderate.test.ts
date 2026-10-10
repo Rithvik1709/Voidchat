@@ -48,7 +48,7 @@ describe('POST /api/groups/:id/moderate', () => {
     expect(db.files[g.id]).toHaveLength(0);
     // the guard gets the secret and a hashed room key, never the raw room id
     const [, init] = fake.mock.calls[0] as unknown as [string, RequestInit];
-    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer shh');
+    expect((init.headers as Record<string, string>)['x-guard-secret']).toBe('shh');
     expect(String(init.body)).not.toContain(g.id);
   });
 

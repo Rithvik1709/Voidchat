@@ -106,7 +106,9 @@ async function judge(room, context, message) {
 /* ---------------- HTTP ---------------- */
 
 function authorized(req) {
-  const got = Buffer.from((req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
+  // x-guard-secret is preferred: some hosts (Hugging Face) reserve the Authorization header
+  const raw = req.headers["x-guard-secret"] || (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  const got = Buffer.from(String(raw));
   const want = Buffer.from(SECRET);
   return got.length === want.length && timingSafeEqual(got, want);
 }
