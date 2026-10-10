@@ -134,6 +134,7 @@ function Panel({ i, p, active }: { i: number; p: MotionValue<number>; active: bo
   const wx = useTransform(p, [center - 0.42, center + 0.42], [420, -420]);
   const titleY = useTransform(p, [center - 0.3, center], [60, 0]);
   const titleOpacity = useTransform(p, [center - 0.3, center - 0.08], [0, 1]);
+  const visualScale = useTransform(p, [center - 0.35, center, center + 0.35], [0.82, 1.12, 0.9]);
   return (
     <div className="relative grid h-full w-screen shrink-0 grid-cols-[1fr_1.1fr] items-center gap-16 px-[7vw]">
       <motion.div
@@ -148,7 +149,7 @@ function Panel({ i, p, active }: { i: number; p: MotionValue<number>; active: bo
         <h3 className="mt-2 font-[family-name:var(--font-serif)] text-7xl leading-[0.95] tracking-[-0.02em] text-[#171412]">{s.title}</h3>
         <p className="mt-6 max-w-md text-lg leading-relaxed text-[#171412]/65">{s.body}</p>
       </motion.div>
-      <motion.div className="relative" style={{ x: vx }}>
+      <motion.div className="relative" style={{ x: vx, scale: visualScale }}>
         <Visual active={active} i={i} />
       </motion.div>
     </div>

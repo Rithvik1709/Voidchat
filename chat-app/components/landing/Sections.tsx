@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { FAQ, USE_CASES } from "@/lib/siteContent";
 import { InkParagraph, Kicker, RiseWords, Stamp, ease } from "@/components/landing/ui";
+import { DropLetters } from "@/components/landing/Moments";
 
 const wrap = "mx-auto max-w-7xl px-5 sm:px-8";
 const serif = "font-[family-name:var(--font-serif)]";
@@ -244,9 +245,15 @@ const scallop =
 
 export function Ledger() {
   const ref = useRef<HTMLDivElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
   const inView = useInView(ref, { once: true, margin: "-20% 0px" });
+  const reduce = useReducedMotion();
+  // the receipt drifts and tilts as it passes, like paper caught in a draft
+  const { scrollYProgress } = useScroll({ target: sectionRef, offset: ["start end", "end start"] });
+  const floatY = useTransform(scrollYProgress, [0, 1], [80, -80]);
+  const floatRotate = useTransform(scrollYProgress, [0, 0.5, 1], [5, -2, -7]);
   return (
-    <section className="py-28 md:py-40">
+    <section className="py-28 md:py-40" id="receipt" ref={sectionRef}>
       <div className={`${wrap} grid items-center gap-16 lg:grid-cols-[1fr_0.9fr]`}>
         <div>
           <Kicker n="07">The receipt</Kicker>
@@ -263,12 +270,13 @@ export function Ledger() {
 
         <motion.div
           className="relative mx-auto w-full max-w-sm"
-          initial={{ rotate: 4, y: 60, opacity: 0 }}
+          initial={{ opacity: 0 }}
           ref={ref}
           transition={{ duration: 1, ease }}
           viewport={{ once: true, margin: "-15% 0px" }}
-          whileInView={{ rotate: -2, y: 0, opacity: 1 }}
+          whileInView={{ opacity: 1 }}
         >
+          <motion.div style={reduce ? undefined : { y: floatY, rotate: floatRotate }}>
           <div className="bg-[#fbf8f2] px-7 py-10 font-mono text-[13px] text-[#171412] shadow-[0_40px_80px_-40px_rgba(60,40,20,0.55)]" style={{ mask: scallop, WebkitMask: scallop }}>
             <div className="text-center">
               <div className={`${serif} text-3xl italic`}>nullchat</div>
@@ -306,6 +314,7 @@ export function Ledger() {
             />
             <div className="mt-4 text-center text-[10px] uppercase tracking-[0.2em] text-[#171412]/50">thanks for leaving nothing behind</div>
           </div>
+          </motion.div>
           <div className="absolute left-1/2 top-[44%] -translate-x-1/2">
             <Stamp className="bg-[#fbf8f2]/30 text-2xl" delay={2.2} rotate={-12}>
               Forgotten
@@ -392,9 +401,7 @@ export function Closing() {
     <section className="relative overflow-hidden py-28 text-center md:py-44">
       <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(40% 50% at 50% 100%, rgba(255,91,31,0.18), transparent 70%)" }} />
       <div className="relative px-5">
-        <h2 className={`${serif} text-[clamp(4rem,13vw,12rem)] leading-[0.85] tracking-[-0.03em] text-[#171412]`}>
-          <RiseWords text="Say it once." />
-        </h2>
+        <DropLetters className={`${serif} text-[clamp(4rem,13vw,12rem)] leading-[0.85] tracking-[-0.03em] text-[#171412]`} text="Say it once." />
         <p className="mx-auto mt-6 max-w-md text-lg text-[#171412]/60">Your first room is three seconds away. No account, no download.</p>
         <Link
           className="group mt-10 inline-flex items-center gap-3 rounded-full bg-[#171412] py-3 pl-7 pr-3 text-base font-medium text-[#f1ece3] transition-transform hover:-translate-y-0.5"

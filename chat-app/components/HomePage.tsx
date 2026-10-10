@@ -8,6 +8,7 @@ import BurnNote from "@/components/landing/BurnNote";
 import BurnScroll from "@/components/landing/BurnScroll";
 import ProtocolMesh from "@/components/landing/ProtocolMesh";
 import Steps from "@/components/landing/Steps";
+import { Facts, RAIL, SectionRail, ZoomThrough } from "@/components/landing/Moments";
 import { Closing, Faq, Features, Ledger, UseCases } from "@/components/landing/Sections";
 import { BurntEdge, EmberCursor, Embers, FillStatement, Kicker, Magnetic, MatchIntro, PaperGrain, RiseWords, SmoothScroll, VelocityMarquee, ease } from "@/components/landing/ui";
 import { serif } from "@/components/landing/fonts";
@@ -54,6 +55,7 @@ function SmartLink({ href, className, children }: { href: string; className: str
 function useNavState() {
   const [dark, setDark] = useState(false);
   const [active, setActive] = useState<string | null>(null);
+  const [section, setSection] = useState<string | null>("intro");
   useEffect(() => {
     const onScroll = () => {
       const probe = 40;
@@ -67,12 +69,18 @@ function useNavState() {
         if (el && el.getBoundingClientRect().top < window.innerHeight * 0.45) current = id;
       }
       setActive(current);
+      let rail: string | null = "intro";
+      for (const [id] of RAIL) {
+        const el = document.getElementById(id);
+        if (el && el.getBoundingClientRect().top < window.innerHeight * 0.5) rail = id;
+      }
+      setSection(rail);
     };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
-  return { dark, active };
+  return { dark, active, section };
 }
 
 /** One letter of the footer wordmark: rises into place, then fills with fire from below. */
@@ -95,7 +103,7 @@ function FireLetter({ char, i, p, fire, reduce }: { char: string; i: number; p: 
 
 export default function HomePage() {
   const reduce = useReducedMotion();
-  const { dark, active } = useNavState();
+  const { dark, active, section } = useNavState();
   const { scrollY, scrollYProgress } = useScroll();
   const progress = useSpring(scrollYProgress, { stiffness: 140, damping: 28 });
 
@@ -117,6 +125,7 @@ export default function HomePage() {
       <MatchIntro />
       <PaperGrain />
       <EmberCursor />
+      <SectionRail active={section} dark={dark} />
 
       {/* floating pill nav */}
       <nav className="fixed inset-x-0 top-4 z-50 flex justify-center px-4">
@@ -164,7 +173,26 @@ export default function HomePage() {
 
       <main>
         {/* HERO */}
-        <section className="relative flex min-h-[100svh] items-center overflow-hidden pb-24 pt-32">
+        <section className="relative flex min-h-[100svh] items-center overflow-hidden pb-24 pt-32" id="intro">
+          {/* notebook paper: rules and a margin line draw in on load */}
+          <div aria-hidden className="pointer-events-none absolute inset-0">
+            {Array.from({ length: 14 }, (_, i) => (
+              <motion.span
+                animate={{ scaleX: 1 }}
+                className="absolute inset-x-0 h-px origin-left bg-[#171412]/[0.06]"
+                initial={{ scaleX: 0 }}
+                key={i}
+                style={{ top: `${10 + i * 6.4}%` }}
+                transition={{ duration: 1.4, delay: 0.1 + i * 0.05, ease }}
+              />
+            ))}
+            <motion.span
+              animate={{ scaleY: 1 }}
+              className="absolute bottom-0 left-[4.5%] top-0 w-px origin-top bg-[#ff5b1f]/35"
+              initial={{ scaleY: 0 }}
+              transition={{ duration: 1.6, delay: 0.3, ease }}
+            />
+          </div>
           <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(45% 45% at 85% 70%, rgba(255,91,31,0.16), transparent 70%)" }} />
           <Embers className="bottom-0 right-0 h-[80%] w-full lg:w-1/2" count={18} height={520} />
           <div className="relative mx-auto grid w-full max-w-7xl items-center gap-16 px-5 sm:px-8 lg:grid-cols-[1.2fr_1fr]">
@@ -281,6 +309,7 @@ export default function HomePage() {
           </VelocityMarquee>
         </div>
 
+        <ZoomThrough />
         <Steps />
         <BurnScroll />
 
@@ -295,6 +324,7 @@ export default function HomePage() {
           </div>
         </section>
 
+        <Facts />
         <Features />
         <UseCases />
 
