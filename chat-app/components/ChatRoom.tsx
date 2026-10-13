@@ -787,7 +787,8 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
         await sendBroadcast('message', { ...messageData, sig });
         setMessages(prev => [...prev, { ...messageData, content: bound }]);
         // Store it in the room's chat log; a failed log never blocks the chat
-        fetch(`/api/groups/${groupId}/log`, {
+        // TEMP TESTING: renamed from /log. DELETE/REVERT before pushing to production.
+        fetch(`/api/groups/${groupId}/heartbeat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-room-proof': proofRef.current },
             body: JSON.stringify({ id: messageData.id, sender: username, timestamp: messageData.timestamp, content: bound }),

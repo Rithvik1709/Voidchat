@@ -1,18 +1,19 @@
+// TEMP TESTING: renamed from /log. DELETE/REVERT before pushing to production.
 import { beforeEach, describe, expect, it } from 'vitest';
-import { POST } from '@/app/api/groups/[groupId]/log/route';
+import { POST } from '@/app/api/groups/[groupId]/heartbeat/route';
 import { freshIp, getDb, jsonRequest, params } from '../helpers/api';
 import { hashProof } from '@/lib/server/groups';
 
 const proof = 'f'.repeat(64);
 const log = (id: string, body: unknown, headers: Record<string, string> = {}) =>
-  POST(jsonRequest(`/api/groups/${id}/log`, 'POST', body, { ...freshIp(), ...headers }), params(id));
+  POST(jsonRequest(`/api/groups/${id}/heartbeat`, 'POST', body, { ...freshIp(), ...headers }), params(id));
 const msg = { id: 'm1', sender: 'ghost', timestamp: '2026-10-13T10:00:00.000Z', content: { text: 'hello', from: 'ghost' } };
 
 beforeEach(async () => {
   (await getDb()).reset();
 });
 
-describe('POST /api/groups/:id/log', () => {
+describe('POST /api/groups/:id/heartbeat', () => {
   it('stores the message under the room id', async () => {
     const db = await getDb();
     const g = db.seedGroup({ proof_hash: hashProof(proof) });
