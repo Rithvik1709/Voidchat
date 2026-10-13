@@ -35,6 +35,12 @@ class Query implements PromiseLike<Result> {
     return this;
   }
   insert(rows: Row | Row[]) { this.op = 'insert'; this.payload = Array.isArray(rows) ? rows : [rows]; this.wantsRows = false; return this; }
+  /** Only the ignoreDuplicates form (ON CONFLICT DO NOTHING) is modelled. */
+  upsert(rows: Row | Row[], opts?: { onConflict?: string }) {
+    const key = opts?.onConflict ?? 'id';
+    const existing = new Set((this.db.tables[this.table] ?? []).map(r => r[key]));
+    return this.insert((Array.isArray(rows) ? rows : [rows]).filter(r => !existing.has(r[key])));
+  }
   update(obj: Row) { this.op = 'update'; this.payload = obj; this.wantsRows = false; return this; }
   delete() { this.op = 'delete'; this.wantsRows = false; return this; }
 
