@@ -38,13 +38,12 @@ export async function POST(request: Request, props: { params: Promise<{ groupId:
             return NextResponse.json({ error: 'Not a member of this room' }, { status: 403 });
         }
 
+        // A plain insert, not an upsert: ON CONFLICT needs SELECT, which the insert-only
+        // policy deliberately does not grant. A duplicate id (23505) is a retry, so it is fine.
         const { error } = await supabaseAdmin
             .from('chat_logs')
-            .upsert(
-                { id, group_id: groupId, sender, content, sent_at: sentAt.toISOString() },
-                { onConflict: 'id', ignoreDuplicates: true }
-            );
-        if (error) throw new Error(error.message);
+            .insert({ id, group_id: groupId, sender, content, sent_at: sentAt.toISOString() });
+        if (error && error.code !== '23505') throw new Error(error.message);
 
         return NextResponse.json({ success: true });
     } catch (err) {
