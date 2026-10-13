@@ -786,6 +786,13 @@ export default function ChatRoom({ groupId, groupName, options = NO_OPTIONS }: {
         const sig = await signer.sign(messageSigData(groupId, messageData));
         await sendBroadcast('message', { ...messageData, sig });
         setMessages(prev => [...prev, { ...messageData, content: bound }]);
+        // Store it in the room's chat log; a failed log never blocks the chat
+        fetch(`/api/groups/${groupId}/log`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-room-proof': proofRef.current },
+            body: JSON.stringify({ id: messageData.id, sender: username, timestamp: messageData.timestamp, content: bound }),
+            keepalive: bound.audio === undefined, // keepalive bodies are capped at 64KB
+        }).catch(() => undefined);
     };
 
     const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
