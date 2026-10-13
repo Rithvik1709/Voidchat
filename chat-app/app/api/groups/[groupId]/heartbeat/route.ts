@@ -1,3 +1,4 @@
+// TEMP TESTING: renamed from /log. DELETE/REVERT before pushing to production.
 import { NextResponse } from 'next/server';
 import { extractProof, getGroup, isUuid, verifyRoomProof } from '@/lib/server/groups';
 import { createLimiter } from '@/lib/server/rateLimit';
@@ -8,7 +9,7 @@ import { MAX_NAME_LENGTH, sanitizeContent } from '@/lib/chatSafety';
 const overLimit = createLimiter(120, 60_000);
 
 /**
- * POST /api/groups/:groupId/log - Store one sent message in the room's chat log.
+ * POST /api/groups/:groupId/heartbeat - Store one sent message in the room's chat log.
  *
  * The sender's browser calls this after broadcasting a message, with the decrypted
  * content. Rows land in public.chat_logs keyed by message id, so a retry is a no-op.
